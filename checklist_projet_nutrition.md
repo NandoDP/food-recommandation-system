@@ -1,0 +1,520 @@
+# CHECKLIST COMPLÈTE - SYSTÈME DE RECOMMANDATION ALIMENTAIRE
+## Projet Master 1 - 2 Semaines
+
+---
+
+## 📋 PHASE PRÉPARATOIRE (Jour 0)
+
+### Documentation Préliminaire
+- [ ] Définir les objectifs SMART du projet
+- [ ] Lister les contraintes (temps, budget, compétences)
+- [ ] Identifier les outils/technologies à utiliser
+- [ ] Créer le repository Git/GitHub
+- [ ] Préparer l'environnement de développement
+
+### Recherche Documentaire
+- [ ] Rechercher 5-8 articles scientifiques sur nutrition et maladies chroniques
+- [ ] Consulter recommandations OMS sur diabète/cancer/maladies hépatiques
+- [ ] Documenter les statistiques locales (Sénégal) sur ces maladies
+- [ ] Identifier applications similaires existantes
+- [ ] Noter les points forts/faibles des solutions existantes
+
+---
+
+## 🗂️ SEMAINE 1 : BACKEND & BASE DE DONNÉES
+
+### JOUR 1-2 : Conception & Modélisation
+
+#### Modèle de Données
+- [ ] Créer le diagramme Entité-Relations (ERD)
+- [ ] Définir les 8-10 tables principales
+- [ ] Établir les relations entre entités
+- [ ] Définir les clés primaires et étrangères
+- [ ] Créer le dictionnaire de données (description de chaque champ)
+- [ ] Valider le modèle avec un encadreur/pair
+
+#### Base de Connaissances Nutritionnelles
+- [ ] Lister 50 aliments de base sénégalais prioritaires
+- [ ] Collecter valeurs nutritionnelles (calories, glucides, protéines, lipides, fibres)
+- [ ] Rechercher index glycémique des aliments (diabète)
+- [ ] Identifier teneur en sodium (problèmes hépatiques/HTA)
+- [ ] Documenter 30-40 plats locaux typiques (thiébou, yassa, mafé, etc.)
+- [ ] Lister ingrédients de chaque plat
+
+#### Règles Métier - Diabète
+- [ ] Définir seuils glycémiques (IG < 55 faible, 55-70 moyen, >70 élevé)
+- [ ] Établir limites glucides par repas (45-60g)
+- [ ] Lister aliments interdits/limités/recommandés
+- [ ] Définir portions recommandées
+
+#### Règles Métier - Allergies
+- [ ] Lister 14 allergènes majeurs (arachide, gluten, lactose, etc.)
+- [ ] Créer matrice allergène-aliment
+- [ ] Définir niveaux d'alerte (critique, attention, traces)
+- [ ] Documenter allergies croisées (ex: latex-banane)
+
+#### Règles Métier - Problèmes Hépatiques
+- [ ] Définir limite sodium (< 2000mg/jour)
+- [ ] Lister aliments hépatotoxiques
+- [ ] Établir restrictions protéines selon stade
+- [ ] Documenter aliments détoxifiants
+
+#### Règles Métier - Cancer
+- [ ] Identifier aliments anti-inflammatoires
+- [ ] Lister aliments à éviter (ultra-transformés)
+- [ ] Documenter interactions avec traitements
+- [ ] Définir besoins caloriques augmentés
+
+#### Système de Scoring
+- [ ] Créer formule de calcul score compatibilité (0-100)
+- [ ] Définir pondération des critères
+- [ ] Établir code couleur (vert/orange/rouge)
+- [ ] Tester avec 10 cas d'exemple
+
+### JOUR 3-4 : Implémentation Base de Données
+
+#### Setup Technique
+- [ ] Choisir SGBD (PostgreSQL recommandé / MongoDB si NoSQL)
+- [ ] Installer et configurer localement
+- [ ] Créer la base de données principale
+- [ ] Configurer utilisateurs et permissions
+
+#### Création des Tables
+- [ ] Table `users` avec champs de base
+- [ ] Table `health_profiles` (profils santé)
+- [ ] Table `diseases` (maladies)
+- [ ] Table `allergens` (allergènes)
+- [ ] Table `foods` (aliments)
+- [ ] Table `ingredients` (ingrédients)
+- [ ] Table `dishes` (plats/menus)
+- [ ] Table `dish_ingredients` (composition)
+- [ ] Table `disease_food_restrictions` (restrictions)
+- [ ] Table `allergen_food_mapping` (correspondances)
+- [ ] Table `user_meal_history` (historique)
+
+#### Indexation & Optimisation
+- [ ] Créer index sur `user_id`
+- [ ] Créer index sur `disease_id`, `allergen_id`
+- [ ] Créer index full-text sur noms d'aliments
+- [ ] Tester performances requêtes
+
+#### Peuplement Initial
+- [ ] Insérer 5 maladies principales
+- [ ] Insérer 14 allergènes majeurs
+- [ ] Insérer 50 aliments de base
+- [ ] Insérer 30 plats locaux
+- [ ] Insérer règles restrictions (minimum 50 règles)
+- [ ] Vérifier intégrité des données
+
+#### Scripts & Backup
+- [ ] Créer script de migration
+- [ ] Créer script de seed (données initiales)
+- [ ] Créer script de backup
+- [ ] Documenter procédures dans README
+
+### JOUR 5-7 : API Backend & Logique Métier
+
+#### Setup Backend
+- [ ] Choisir framework (FastAPI/Python ou Express/Node.js)
+- [ ] Créer structure projet (MVC ou équivalent)
+- [ ] Configurer connexion base de données
+- [ ] Installer dépendances (ORM, validation, etc.)
+- [ ] Configurer variables d'environnement (.env)
+
+#### API Endpoints - Gestion Utilisateurs
+- [ ] `POST /api/users/register` - Inscription
+- [ ] `POST /api/users/login` - Connexion (optionnel pour MVP)
+- [ ] `GET /api/users/:id/profile` - Récupérer profil
+- [ ] `PUT /api/users/:id/profile` - Modifier profil
+- [ ] `DELETE /api/users/:id` - Supprimer compte
+
+#### API Endpoints - Profil Santé
+- [ ] `POST /api/health-profiles` - Créer profil santé
+- [ ] `GET /api/health-profiles/:userId` - Récupérer profil
+- [ ] `PUT /api/health-profiles/:id` - Mettre à jour
+- [ ] `POST /api/health-profiles/:id/diseases` - Ajouter maladie
+- [ ] `POST /api/health-profiles/:id/allergens` - Ajouter allergène
+- [ ] `DELETE /api/health-profiles/:id/diseases/:diseaseId` - Retirer maladie
+
+#### API Endpoints - Analyse de Menu
+- [ ] `POST /api/analyze-menu` - Analyser un menu (texte)
+- [ ] `POST /api/analyze-dish` - Analyser un plat spécifique
+- [ ] `GET /api/recommendations/:userId` - Obtenir recommandations
+- [ ] `POST /api/alternatives/:dishId` - Suggérer alternatives
+
+#### API Endpoints - Base de Données Aliments
+- [ ] `GET /api/foods` - Liste aliments (avec pagination)
+- [ ] `GET /api/foods/:id` - Détails aliment
+- [ ] `GET /api/foods/search?q=` - Recherche aliment
+- [ ] `GET /api/dishes` - Liste plats
+- [ ] `GET /api/dishes/:id` - Détails plat avec ingrédients
+
+#### Logique Métier - Module Analyse
+- [ ] Fonction `extractIngredients(menuText)` - Extraire ingrédients du texte
+- [ ] Fonction `identifyAllergens(ingredients)` - Détecter allergènes
+- [ ] Fonction `calculateGlycemicLoad(dish)` - Calculer charge glycémique
+- [ ] Fonction `checkRestrictions(dish, healthProfile)` - Vérifier restrictions
+- [ ] Fonction `calculateCompatibilityScore(dish, healthProfile)` - Score 0-100
+- [ ] Fonction `generateAlerts(analysis)` - Générer alertes colorées
+- [ ] Fonction `suggestAlternatives(dish, restrictions)` - Alternatives
+
+#### Intégration IA/NLP
+- [ ] Choisir API NLP (Claude API, OpenAI, ou Hugging Face)
+- [ ] Créer compte et obtenir clé API
+- [ ] Implémenter fonction `analyzeMenuWithAI(text)`
+- [ ] Créer prompt efficace pour extraction ingrédients
+- [ ] Tester avec 10-15 descriptions de plats
+- [ ] Gérer cas d'erreurs API
+- [ ] Implémenter cache pour réduire coûts
+
+#### Tests API
+- [ ] Tester chaque endpoint avec Postman/Insomnia
+- [ ] Créer collection de tests
+- [ ] Valider codes de retour HTTP
+- [ ] Tester cas d'erreur (données invalides)
+- [ ] Documenter l'API (Swagger/OpenAPI optionnel)
+
+#### Sécurité & Validation
+- [ ] Valider entrées utilisateur
+- [ ] Protéger contre injections SQL
+- [ ] Implémenter rate limiting (optionnel)
+- [ ] Gérer erreurs proprement
+- [ ] Logger les requêtes importantes
+
+---
+
+## 💬 SEMAINE 2 : INTERFACES & INTÉGRATION
+
+### JOUR 8-10 : Chatbot
+
+#### Choix de Plateforme
+- [ ] Décider priorité : Telegram (plus simple) ou WhatsApp
+- [ ] Créer compte développeur sur plateforme choisie
+- [ ] Lire documentation officielle
+
+#### Telegram Bot (Recommandé pour MVP)
+- [ ] Créer bot via @BotFather
+- [ ] Obtenir token API
+- [ ] Installer SDK/bibliothèque (python-telegram-bot ou node-telegram-bot-api)
+- [ ] Configurer webhook ou polling
+- [ ] Tester connexion basique
+
+#### WhatsApp Bot (Alternative)
+- [ ] S'inscrire à Twilio ou WhatsApp Business API
+- [ ] Obtenir numéro test
+- [ ] Configurer webhook
+- [ ] Vérifier limitations free tier
+
+#### Flux de Conversation - Onboarding
+- [ ] Message de bienvenue `/start`
+- [ ] Demander nom/prénom
+- [ ] Demander âge/genre (optionnel)
+- [ ] Questionnaire maladies chroniques (menu à choix)
+- [ ] Questionnaire allergies (menu à choix)
+- [ ] Confirmation profil créé
+- [ ] Sauvegarder dans base de données
+
+#### Flux de Conversation - Analyse Menu
+- [ ] Commande `/analyser` ou message direct
+- [ ] Demander description du menu
+- [ ] Envoyer texte à API backend
+- [ ] Afficher résultat avec emojis (🟢🟠🔴)
+- [ ] Lister ingrédients détectés
+- [ ] Afficher alertes si nécessaire
+- [ ] Proposer alternatives si menu incompatible
+
+#### Flux de Conversation - Commandes Utiles
+- [ ] `/profil` - Voir son profil santé
+- [ ] `/modifier` - Modifier profil
+- [ ] `/aide` - Menu d'aide
+- [ ] `/historique` - Voir dernières analyses (optionnel)
+- [ ] `/recommandations` - Idées de menus
+
+#### Gestion des États Conversation
+- [ ] Implémenter machine à états (onboarding, idle, analyzing)
+- [ ] Gérer contexte utilisateur
+- [ ] Timeout si inactivité
+- [ ] Gérer erreurs utilisateur (commandes invalides)
+
+#### Interface Utilisateur Chatbot
+- [ ] Utiliser boutons interactifs (inline keyboard)
+- [ ] Créer menus de navigation clairs
+- [ ] Ajouter emojis pour clarté
+- [ ] Formatter messages proprement (Markdown/HTML)
+- [ ] Limiter longueur des messages
+
+#### Tests Chatbot
+- [ ] Tester onboarding complet
+- [ ] Tester 10 scénarios d'analyse
+- [ ] Tester modification profil
+- [ ] Tester comportement erreurs
+- [ ] Tester avec plusieurs utilisateurs simultanés
+
+### JOUR 11-12 : Interface Web (MVP)
+
+#### Setup Frontend
+- [ ] Choisir framework (React recommandé / Vue.js)
+- [ ] Créer projet avec Vite/Create React App
+- [ ] Installer Tailwind CSS pour styling
+- [ ] Configurer Axios/Fetch pour appels API
+- [ ] Créer structure dossiers (components, pages, utils)
+
+#### Pages Principales
+- [ ] Page d'accueil/Landing
+- [ ] Page inscription/connexion (simple)
+- [ ] Page profil santé (formulaire)
+- [ ] Page analyse de menu (principale)
+- [ ] Page résultats d'analyse
+- [ ] Page historique (optionnel)
+
+#### Composants - Profil Santé
+- [ ] Formulaire informations personnelles
+- [ ] Sélecteur multi-choix maladies (checkboxes)
+- [ ] Sélecteur multi-choix allergènes (checkboxes)
+- [ ] Bouton sauvegarder
+- [ ] Affichage profil actuel
+- [ ] Option modifier/supprimer
+
+#### Composants - Analyse Menu
+- [ ] Zone de texte pour description menu
+- [ ] Bouton "Analyser"
+- [ ] Loader pendant analyse
+- [ ] Carte de résultats avec score coloré
+- [ ] Liste ingrédients détectés
+- [ ] Section alertes (rouge/orange/jaune)
+- [ ] Section recommandations/alternatives
+- [ ] Bouton "Nouvelle analyse"
+
+#### Composants - Résultats Visuels
+- [ ] Badge score avec couleur (vert/orange/rouge)
+- [ ] Graphique radar nutritionnel (optionnel mais valorisant)
+- [ ] Liste avec icônes pour allergènes détectés
+- [ ] Cartes alternatives suggérées
+- [ ] Explications pédagogiques
+
+#### Design & UX
+- [ ] Design responsive (mobile-first)
+- [ ] Palette de couleurs cohérente
+- [ ] Typographie lisible
+- [ ] Espacement suffisant
+- [ ] Feedback visuel sur actions (toasts/notifications)
+- [ ] Accessibilité (contraste, labels)
+
+#### Connexion Backend
+- [ ] Configurer URL API (variable d'environnement)
+- [ ] Implémenter appels API pour chaque fonctionnalité
+- [ ] Gérer tokens/sessions (si auth)
+- [ ] Gérer erreurs réseau
+- [ ] Afficher messages d'erreur utilisateur-friendly
+
+#### Tests Interface Web
+- [ ] Tester sur Chrome/Firefox/Safari
+- [ ] Tester responsive (mobile/tablette/desktop)
+- [ ] Tester formulaires (validation)
+- [ ] Tester flux complet utilisateur
+- [ ] Corriger bugs UI
+
+### JOUR 13 : Déploiement
+
+#### Backend Deployment
+- [ ] Choisir plateforme (Railway, Render, Heroku)
+- [ ] Créer compte
+- [ ] Configurer variables d'environnement
+- [ ] Déployer API backend
+- [ ] Tester endpoints en production
+- [ ] Configurer domaine (optionnel)
+
+#### Base de Données Production
+- [ ] Provisionner base de données cloud (Railway/Supabase)
+- [ ] Migrer schéma
+- [ ] Importer données initiales
+- [ ] Tester connexion depuis backend
+- [ ] Configurer backups automatiques
+
+#### Frontend Deployment
+- [ ] Choisir plateforme (Vercel, Netlify)
+- [ ] Connecter repository GitHub
+- [ ] Configurer build
+- [ ] Déployer
+- [ ] Tester site en production
+- [ ] Configurer domaine custom (optionnel)
+
+#### Chatbot Deployment
+- [ ] Configurer webhook en production (si nécessaire)
+- [ ] Mettre à jour token bot avec URL production
+- [ ] Tester bot en conditions réelles
+- [ ] Configurer monitoring (optionnel)
+
+#### Tests Post-Déploiement
+- [ ] Tester toute la chaîne bout-en-bout
+- [ ] Vérifier performances/temps de réponse
+- [ ] Tester avec données réelles
+- [ ] Inviter 3-5 utilisateurs bêta
+- [ ] Collecter premiers retours
+
+### JOUR 14 : Documentation & Préparation Soutenance
+
+#### Documentation Technique
+- [ ] README.md complet (installation, utilisation)
+- [ ] Diagrammes d'architecture (système, séquence)
+- [ ] Documentation API (endpoints, paramètres, réponses)
+- [ ] Schéma base de données
+- [ ] Guide de déploiement
+- [ ] Difficultés rencontrées et solutions
+
+#### Documentation Utilisateur
+- [ ] Guide d'utilisation chatbot (avec captures)
+- [ ] Guide d'utilisation interface web
+- [ ] FAQ (questions fréquentes)
+- [ ] Vidéo démo 2-3 minutes (optionnel mais valorisant)
+
+#### Rapport Académique
+- [ ] Page de garde
+- [ ] Résumé/Abstract (français/anglais)
+- [ ] Introduction (problématique, objectifs)
+- [ ] État de l'art (revue littérature)
+- [ ] Méthodologie (conception, technologies)
+- [ ] Implémentation (choix techniques justifiés)
+- [ ] Résultats (captures, tests, statistiques)
+- [ ] Discussion (limites, perspectives)
+- [ ] Conclusion
+- [ ] Bibliographie (normes APA/IEEE)
+- [ ] Annexes (code snippets, questionnaires)
+
+#### Préparation Présentation
+- [ ] Créer slides PowerPoint/Google Slides (15-20 slides)
+- [ ] Structure : Contexte → Problème → Solution → Démo → Résultats → Perspectives
+- [ ] Inclure captures écrans/vidéos
+- [ ] Préparer démonstration live
+- [ ] Préparer plan B (vidéo) si problème réseau
+- [ ] Répéter présentation (15-20 min)
+- [ ] Anticiper questions jury
+
+#### Tests Finaux
+- [ ] Tests utilisateurs (5-10 personnes)
+- [ ] Collecter retours qualitatifs
+- [ ] Mesurer temps de réponse
+- [ ] Calculer taux de précision recommandations
+- [ ] Documenter bugs connus
+
+---
+
+## 🚀 FONCTIONNALITÉS FUTURES (Perspectives)
+
+### À Mentionner dans le Rapport (Non Implémentées)
+
+#### Reconnaissance d'Images
+- [ ] Citer technologies possibles (TensorFlow, PyTorch, Clarifai)
+- [ ] Expliquer processus (capture → détection → identification)
+- [ ] Estimer complexité et délais
+
+#### Application Mobile Native
+- [ ] Citer frameworks (React Native, Flutter)
+- [ ] Justifier avantages (notifications, offline)
+- [ ] Proposer roadmap 6 mois
+
+#### Fonctionnalités Avancées
+- [ ] Planification de menus hebdomadaires
+- [ ] Suivi glycémique intégré
+- [ ] Communauté/partage recettes
+- [ ] Intégration wearables (glucomètres)
+- [ ] Téléconsultation nutritionniste
+
+#### Machine Learning Avancé
+- [ ] Recommandations personnalisées (historique)
+- [ ] Prédiction besoins nutritionnels
+- [ ] Détection automatique anomalies alimentaires
+
+---
+
+## ✅ CRITÈRES DE SUCCÈS
+
+### Critères Techniques
+- [ ] Système fonctionne sans crash majeur
+- [ ] Base de données contient minimum 50 aliments, 30 plats
+- [ ] API répond en < 3 secondes
+- [ ] Chatbot répond à 80%+ des requêtes valides
+- [ ] Interface web responsive et intuitive
+
+### Critères Académiques
+- [ ] Rapport 30-50 pages structuré
+- [ ] 5-8 références scientifiques
+- [ ] Diagrammes techniques clairs
+- [ ] Présentation 15-20 minutes fluide
+- [ ] Démonstration convaincante
+
+### Critères Fonctionnels
+- [ ] Détecte correctement 90%+ des allergènes communs
+- [ ] Recommandations pertinentes pour diabétiques
+- [ ] Score de compatibilité cohérent
+- [ ] Alternatives proposées réalistes
+
+---
+
+## 📦 LIVRABLES FINAUX
+
+### Code Source
+- [ ] Repository GitHub/GitLab propre
+- [ ] Code commenté
+- [ ] .gitignore configuré
+- [ ] Branches organisées (main, develop)
+- [ ] Commits réguliers avec messages clairs
+
+### Documentation
+- [ ] README détaillé
+- [ ] Rapport académique PDF
+- [ ] Présentation PowerPoint/PDF
+- [ ] Vidéo de démonstration (optionnel)
+
+### Système Déployé
+- [ ] API backend accessible
+- [ ] Interface web en ligne
+- [ ] Chatbot fonctionnel (au moins Telegram)
+- [ ] Liens partagés avec jury
+
+---
+
+## ⏰ RÉCAPITULATIF CHRONOLOGIQUE
+
+**Jour 1-2** : Modélisation + Collecte données nutritionnelles  
+**Jour 3-4** : Création base de données + Peuplement  
+**Jour 5-7** : Développement API backend + Logique métier  
+**Jour 8-10** : Chatbot (Telegram priorité)  
+**Jour 11-12** : Interface web MVP  
+**Jour 13** : Déploiement complet  
+**Jour 14** : Documentation + Préparation soutenance  
+
+---
+
+## 🎯 CONSEILS DE PRIORISATION
+
+### MUST HAVE (Obligatoire)
+- Base de données fonctionnelle
+- API backend opérationnelle
+- Chatbot Telegram basique
+- Documentation technique minimale
+- Rapport académique
+
+### SHOULD HAVE (Important)
+- Interface web responsive
+- Système de scoring sophistiqué
+- Tests utilisateurs
+- Vidéo démo
+
+### COULD HAVE (Nice to have)
+- Graphiques nutritionnels
+- Historique détaillé
+- Intégration WhatsApp
+- Déploiement domaine custom
+
+### WON'T HAVE (Reporter)
+- Reconnaissance d'images
+- Application mobile
+- Machine learning avancé
+- Paiements/abonnements
+
+---
+
+**BONNE CHANCE ! 🍀**
+
+*Conseil final : Commitez votre code quotidiennement, testez régulièrement, et n'hésitez pas à simplifier si vous prenez du retard. Un MVP fonctionnel vaut mieux qu'un système complexe incomplet.*

@@ -6,15 +6,15 @@
 ## 📋 PHASE PRÉPARATOIRE (Jour 0)
 
 ### Documentation Préliminaire
-- [ ] Définir les objectifs SMART du projet
-- [ ] Lister les contraintes (temps, budget, compétences)
-- [ ] Identifier les outils/technologies à utiliser
-- [ ] Créer le repository Git/GitHub
-- [ ] Préparer l'environnement de développement
+- [x] Définir les objectifs SMART du projet
+- [x] Lister les contraintes (temps, budget, compétences)
+- [x] Identifier les outils/technologies à utiliser
+- [x] Créer le repository Git/GitHub
+- [x] Préparer l'environnement de développement
 
 ### Recherche Documentaire
-- [ ] Rechercher 5-8 articles scientifiques sur nutrition et maladies chroniques
-- [ ] Consulter recommandations OMS sur diabète/cancer/maladies hépatiques
+- [x] Rechercher 5-8 articles scientifiques sur nutrition et maladies chroniques
+- [x] Consulter recommandations OMS sur diabète/cancer/maladies hépatiques
 - [ ] Documenter les statistiques locales (Sénégal) sur ces maladies
 - [ ] Identifier applications similaires existantes
 - [ ] Noter les points forts/faibles des solutions existantes
@@ -26,71 +26,71 @@
 ### JOUR 1-2 : Conception & Modélisation
 
 #### Modèle de Données
-- [ ] Créer le diagramme Entité-Relations (ERD)
-- [ ] Définir les 8-10 tables principales
-- [ ] Établir les relations entre entités
-- [ ] Définir les clés primaires et étrangères
-- [ ] Créer le dictionnaire de données (description de chaque champ)
+- [x] Créer le diagramme Entité-Relations (ERD)
+- [x] Définir les 8-10 tables principales
+- [x] Établir les relations entre entités
+- [x] Définir les clés primaires et étrangères
+- [x] Créer le dictionnaire de données (description de chaque champ)
 - [ ] Valider le modèle avec un encadreur/pair
 
 #### Base de Connaissances Nutritionnelles
-- [ ] Lister 50 aliments de base sénégalais prioritaires
-- [ ] Collecter valeurs nutritionnelles (calories, glucides, protéines, lipides, fibres)
-- [ ] Rechercher index glycémique des aliments (diabète)
-- [ ] Identifier teneur en sodium (problèmes hépatiques/HTA)
-- [ ] Documenter 30-40 plats locaux typiques (thiébou, yassa, mafé, etc.)
-- [ ] Lister ingrédients de chaque plat
+- [-] Lister 50 aliments de base sénégalais prioritaires
+- [x] Collecter valeurs nutritionnelles (calories, glucides, protéines, lipides, fibres)
+- [x] Rechercher index glycémique des aliments (diabète)
+- [x] Identifier teneur en sodium (problèmes hépatiques/HTA)
+- [-] Documenter 30-40 plats locaux typiques (thiébou, yassa, mafé, etc.)
+- [-] Lister ingrédients de chaque plat
 
 #### Règles Métier - Diabète
-- [ ] Définir seuils glycémiques (IG < 55 faible, 55-70 moyen, >70 élevé)
-- [ ] Établir limites glucides par repas (45-60g)
-- [ ] Lister aliments interdits/limités/recommandés
-- [ ] Définir portions recommandées
+- [x] Définir seuils glycémiques (IG < 55 faible, 55-70 moyen, >70 élevé)
+- [x] Établir limites glucides par repas (45-60g)
+- [x] Lister aliments interdits/limités/recommandés
+- [x] Définir portions recommandées
 
 #### Règles Métier - Allergies
-- [ ] Lister 14 allergènes majeurs (arachide, gluten, lactose, etc.)
-- [ ] Créer matrice allergène-aliment
-- [ ] Définir niveaux d'alerte (critique, attention, traces)
+- [x] Lister 14 allergènes majeurs (arachide, gluten, lactose, etc.)
+- [x] Créer matrice allergène-aliment
+- [x] Définir niveaux d'alerte (critique, attention, traces)
 - [ ] Documenter allergies croisées (ex: latex-banane)
 
 #### Règles Métier - Problèmes Hépatiques
-- [ ] Définir limite sodium (< 2000mg/jour)
-- [ ] Lister aliments hépatotoxiques
-- [ ] Établir restrictions protéines selon stade
-- [ ] Documenter aliments détoxifiants
+- [x] Définir limite sodium (< 2000mg/jour)
+- [x] Lister aliments hépatotoxiques
+- [x] Établir restrictions protéines selon stade
+- [x] Documenter aliments détoxifiants
 
 #### Règles Métier - Cancer
-- [ ] Identifier aliments anti-inflammatoires
-- [ ] Lister aliments à éviter (ultra-transformés)
+- [x] Identifier aliments anti-inflammatoires
+- [x] Lister aliments à éviter (ultra-transformés)
 - [ ] Documenter interactions avec traitements
-- [ ] Définir besoins caloriques augmentés
+- [x] Définir besoins caloriques augmentés
 
 #### Système de Scoring
-- [ ] Créer formule de calcul score compatibilité (0-100)
-- [ ] Définir pondération des critères
-- [ ] Établir code couleur (vert/orange/rouge)
+- [x] Créer formule de calcul score compatibilité (0-100)
+- [x] Définir pondération des critères
+- [x] Établir code couleur (vert/orange/rouge)
 - [ ] Tester avec 10 cas d'exemple
 
 ### JOUR 3-4 : Implémentation Base de Données
 
 #### Setup Technique
-- [ ] Choisir SGBD (PostgreSQL recommandé / MongoDB si NoSQL)
-- [ ] Installer et configurer localement
-- [ ] Créer la base de données principale
-- [ ] Configurer utilisateurs et permissions
+- [x] Choisir SGBD (PostgreSQL recommandé / MongoDB si NoSQL)
+- [x] Installer et configurer localement
+- [x] Créer la base de données principale
+- [x] Configurer utilisateurs et permissions
 
 #### Création des Tables
-- [ ] Table `users` avec champs de base
-- [ ] Table `health_profiles` (profils santé)
-- [ ] Table `diseases` (maladies)
-- [ ] Table `allergens` (allergènes)
-- [ ] Table `foods` (aliments)
-- [ ] Table `ingredients` (ingrédients)
-- [ ] Table `dishes` (plats/menus)
-- [ ] Table `dish_ingredients` (composition)
-- [ ] Table `disease_food_restrictions` (restrictions)
-- [ ] Table `allergen_food_mapping` (correspondances)
-- [ ] Table `user_meal_history` (historique)
+- [x] Table `users` avec champs de base
+- [x] Table `health_profiles` (profils santé)
+- [x] Table `diseases` (maladies)
+- [x] Table `allergens` (allergènes)
+- [x] Table `foods` (aliments)
+- [x] Table `ingredients` (ingrédients)
+- [x] Table `dishes` (plats/menus)
+- [x] Table `dish_ingredients` (composition)
+- [x] Table `disease_food_restrictions` (restrictions)
+- [x] Table `allergen_food_mapping` (correspondances)
+- [x] Table `user_meal_history` (historique)
 
 #### Indexation & Optimisation
 - [ ] Créer index sur `user_id`
@@ -99,15 +99,15 @@
 - [ ] Tester performances requêtes
 
 #### Peuplement Initial
-- [ ] Insérer 5 maladies principales
-- [ ] Insérer 14 allergènes majeurs
-- [ ] Insérer 50 aliments de base
-- [ ] Insérer 30 plats locaux
+- [x] Insérer 5 maladies principales
+- [x] Insérer 14 allergènes majeurs
+- [x] Insérer 50 aliments de base
+- [x] Insérer 30 plats locaux
 - [ ] Insérer règles restrictions (minimum 50 règles)
 - [ ] Vérifier intégrité des données
 
 #### Scripts & Backup
-- [ ] Créer script de migration
+- [x] Créer script de migration
 - [ ] Créer script de seed (données initiales)
 - [ ] Créer script de backup
 - [ ] Documenter procédures dans README
@@ -115,38 +115,38 @@
 ### JOUR 5-7 : API Backend & Logique Métier
 
 #### Setup Backend
-- [ ] Choisir framework (FastAPI/Python ou Express/Node.js)
-- [ ] Créer structure projet (MVC ou équivalent)
-- [ ] Configurer connexion base de données
-- [ ] Installer dépendances (ORM, validation, etc.)
-- [ ] Configurer variables d'environnement (.env)
+- [x] Choisir framework (FastAPI/Python ou Express/Node.js)
+- [x] Créer structure projet (MVC ou équivalent)
+- [x] Configurer connexion base de données
+- [x] Installer dépendances (ORM, validation, etc.)
+- [x] Configurer variables d'environnement (.env)
 
 #### API Endpoints - Gestion Utilisateurs
-- [ ] `POST /api/users/register` - Inscription
+- [x] `POST /api/users/register` - Inscription
 - [ ] `POST /api/users/login` - Connexion (optionnel pour MVP)
-- [ ] `GET /api/users/:id/profile` - Récupérer profil
+- [x] `GET /api/users/:id/profile` - Récupérer profil
 - [ ] `PUT /api/users/:id/profile` - Modifier profil
 - [ ] `DELETE /api/users/:id` - Supprimer compte
 
 #### API Endpoints - Profil Santé
-- [ ] `POST /api/health-profiles` - Créer profil santé
-- [ ] `GET /api/health-profiles/:userId` - Récupérer profil
+- [x] `POST /api/health-profiles` - Créer profil santé
+- [x] `GET /api/health-profiles/:userId` - Récupérer profil
 - [ ] `PUT /api/health-profiles/:id` - Mettre à jour
-- [ ] `POST /api/health-profiles/:id/diseases` - Ajouter maladie
-- [ ] `POST /api/health-profiles/:id/allergens` - Ajouter allergène
-- [ ] `DELETE /api/health-profiles/:id/diseases/:diseaseId` - Retirer maladie
+- [x] `POST /api/health-profiles/:id/diseases` - Ajouter maladie
+- [x] `POST /api/health-profiles/:id/allergens` - Ajouter allergène
+- [x] `DELETE /api/health-profiles/:id/diseases/:diseaseId` - Retirer maladie
 
 #### API Endpoints - Analyse de Menu
-- [ ] `POST /api/analyze-menu` - Analyser un menu (texte)
-- [ ] `POST /api/analyze-dish` - Analyser un plat spécifique
-- [ ] `GET /api/recommendations/:userId` - Obtenir recommandations
-- [ ] `POST /api/alternatives/:dishId` - Suggérer alternatives
+- [x] `POST /api/analyze-menu` - Analyser un menu (texte)
+- [x] `POST /api/analyze-dish` - Analyser un plat spécifique
+- [x] `GET /api/recommendations/:userId` - Obtenir recommandations
+- [x] `POST /api/alternatives/:dishId` - Suggérer alternatives
 
 #### API Endpoints - Base de Données Aliments
 - [ ] `GET /api/foods` - Liste aliments (avec pagination)
 - [ ] `GET /api/foods/:id` - Détails aliment
-- [ ] `GET /api/foods/search?q=` - Recherche aliment
-- [ ] `GET /api/dishes` - Liste plats
+- [x] `GET /api/foods/search?q=` - Recherche aliment
+- [x] `GET /api/dishes` - Liste plats
 - [ ] `GET /api/dishes/:id` - Détails plat avec ingrédients
 
 #### Logique Métier - Module Analyse
@@ -399,14 +399,67 @@
 
 ---
 
-## 🚀 FONCTIONNALITÉS FUTURES (Perspectives)
+## 📸 RECONNAISSANCE D'IMAGES (Intégré au MVP)
 
-### À Mentionner dans le Rapport (Non Implémentées)
+### JOUR 10-11 : Module Reconnaissance Visuelle
 
-#### Reconnaissance d'Images
-- [ ] Citer technologies possibles (TensorFlow, PyTorch, Clarifai)
-- [ ] Expliquer processus (capture → détection → identification)
-- [ ] Estimer complexité et délais
+#### Choix Stack Vision AI
+- [ ] Choisir API Vision (Google Cloud Vision, Clarifai, ou Claude API)
+- [ ] Créer compte et obtenir clés API
+- [ ] Vérifier quotas/limites gratuites
+- [ ] Tester avec 10 images de test
+
+#### Préparation Données Visuelles
+- [ ] Collecter 50-100 photos de plats sénégalais
+- [ ] Photographier plats locaux typiques
+- [ ] Télécharger images libres de droits
+- [ ] Créer dataset d'entraînement (optionnel)
+- [ ] Organiser par catégories de plats
+
+#### Backend - Endpoints Image
+- [ ] `POST /api/analyze-image` - Upload et analyse d'image
+- [ ] `POST /api/identify-dish-from-image` - Identification plat
+- [ ] `GET /api/image-history/:userId` - Historique photos
+- [ ] Support formats (JPEG, PNG, WebP)
+- [ ] Limite taille fichier (5-10 MB)
+
+#### Logique Reconnaissance
+- [ ] Fonction `uploadImage(file)` - Validation et stockage temporaire
+- [ ] Fonction `analyzeImageWithAI(imageData)` - Appel API Vision
+- [ ] Fonction `extractDishName(visionResults)` - Extraire nom du plat
+- [ ] Fonction `matchDishInDatabase(dishName)` - Correspondance BDD
+- [ ] Fonction `combineVisionAndNutrition(dish, healthProfile)` - Analyse complète
+- [ ] Gestion des images non reconnues (fallback vers saisie manuelle)
+
+#### Intégration Chatbot
+- [ ] Telegram : Support envoi photo
+- [ ] Recevoir image de l'utilisateur
+- [ ] Compresser image si nécessaire
+- [ ] Envoyer à API backend
+- [ ] Afficher résultat identification + analyse
+- [ ] Option "Ce n'est pas ça" → correction manuelle
+
+#### Intégration Web
+- [ ] Composant upload image (drag & drop)
+- [ ] Prévisualisation image
+- [ ] Bouton "Analyser cette photo"
+- [ ] Loader pendant traitement
+- [ ] Affichage plat identifié avec confiance (%)
+- [ ] Option caméra (mobile web)
+
+#### Amélioration Précision
+- [ ] Créer mapping noms détectés → plats BDD
+- [ ] Gérer variations noms (thiéboudienne/ceebu jën/tiep)
+- [ ] Détecter ingrédients visibles (tomates, poisson, riz)
+- [ ] Combiner détection objet + reconnaissance plat
+- [ ] Logger erreurs pour amélioration future
+
+#### Tests Reconnaissance
+- [ ] Tester avec 20 plats différents
+- [ ] Mesurer taux de précision (objectif >70%)
+- [ ] Tester éclairages différents
+- [ ] Tester angles de prise de vue
+- [ ] Tester plats mixtes/composés
 
 #### Application Mobile Native
 - [ ] Citer frameworks (React Native, Flutter)

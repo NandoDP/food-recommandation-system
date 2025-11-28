@@ -1,9 +1,9 @@
 from pydantic import BaseModel
 from typing import List, Optional
-from uuid import UUID
+# from uuid import UUID
 
 class HealthProfileCreate(BaseModel):
-    user_id: UUID
+    user_id: str
     intolerances: Optional[str] = None
     physical_activity_level: Optional[str] = None
 
@@ -12,14 +12,14 @@ class HealthProfileUpdate(BaseModel):
     physical_activity_level: Optional[str] = None
 
 class DiseaseAdd(BaseModel):
-    disease_id: UUID
+    disease_id: str
 
 class AllergenAdd(BaseModel):
-    allergen_id: UUID
+    allergen_id: str
 
 class HealthProfileResponse(BaseModel):
-    id: UUID
-    user_id: UUID
+    id: str
+    user_id: str
     intolerances: Optional[str]
     physical_activity_level: Optional[str]
     diseases: List[str]

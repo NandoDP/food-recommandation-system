@@ -188,7 +188,7 @@
 ### JOUR 8-10 : Chatbot
 
 #### Choix de Plateforme
-- [ ] Décider priorité : Telegram (plus simple) ou WhatsApp
+- [x] Décider priorité : Telegram (plus simple) ou WhatsApp
 - [ ] Créer compte développeur sur plateforme choisie
 - [ ] Lire documentation officielle
 

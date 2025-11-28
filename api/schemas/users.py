@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, Text, Integer, DateTime
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import UUID
+# from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy import Table, PrimaryKeyConstraint
@@ -13,8 +13,8 @@ class User(Base):
     __tablename__ = "users"
     
     id = Column(String, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
+    # email = Column(String, unique=True, index=True, nullable=False)
+    # hashed_password = Column(String, nullable=False)
     last_name = Column(Text, nullable=False)
     first_name = Column(Text, nullable=False)
     birth_date = Column(DateTime)
@@ -47,16 +47,16 @@ class Allergen(Base):
 health_profile_diseases = Table(
     "health_profile_diseases",
     Base.metadata,
-    Column("health_profile_id", UUID(as_uuid=True), ForeignKey("health_profiles.id", ondelete="CASCADE")),
-    Column("disease_id", UUID(as_uuid=True), ForeignKey("diseases.id", ondelete="CASCADE")),
+    Column("health_profile_id", String, ForeignKey("health_profiles.id", ondelete="CASCADE")),
+    Column("disease_id", String, ForeignKey("diseases.id", ondelete="CASCADE")),
     PrimaryKeyConstraint("health_profile_id", "disease_id")
 )
 
 health_profile_allergens = Table(
     "health_profile_allergens",
     Base.metadata,
-    Column("health_profile_id", UUID(as_uuid=True), ForeignKey("health_profiles.id", ondelete="CASCADE")),
-    Column("allergen_id", UUID(as_uuid=True), ForeignKey("allergens.id", ondelete="CASCADE")),
+    Column("health_profile_id", String, ForeignKey("health_profiles.id", ondelete="CASCADE")),
+    Column("allergen_id", String, ForeignKey("allergens.id", ondelete="CASCADE")),
     PrimaryKeyConstraint("health_profile_id", "allergen_id")
 )
 
@@ -64,8 +64,8 @@ health_profile_allergens = Table(
 class HealthProfile(Base):
     __tablename__ = "health_profiles"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
+    id = Column(String, primary_key=True, default=( lambda: str(uuid.uuid4()) ))
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"))
     physical_activity_level = Column(String, nullable=False)
 
     user = relationship("User")

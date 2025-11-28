@@ -2,18 +2,18 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime
 
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
+# class UserLogin(BaseModel):
+#     email: EmailStr
+#     password: str
 
 class UserRegister(BaseModel):
-    # username: str
-    email: EmailStr
-    password: str
+    # email: EmailStr
+    # password: str
+    id: str
     last_name: str
     first_name: str 
     birth_date: Optional[str] = None 
-    gender: str
+    gender: Optional[str] = None
     weight: Optional[int] = None 
     height: Optional[int] = None
     registration_date: Optional[str] = None
@@ -22,7 +22,7 @@ class UserRegister(BaseModel):
 class UserResponse(BaseModel):
     id: int
     # username: str
-    email: str
+    # email: str
     last_name: str
     first_name: str
     birth_date: Optional[datetime] = None

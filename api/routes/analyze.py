@@ -153,7 +153,7 @@ class NutritionEngine:
         }
         
         # 1. Vérifier allergènes
-        allergen_score = NutritionEngine._check_allergens(
+        allergen_score = self._check_allergens(
             dish_data, 
             health_profile.get('allergens', []),
             results
@@ -161,7 +161,7 @@ class NutritionEngine:
         results['detailed_breakdown']['allergen_score'] = allergen_score
         
         # 2. Vérifier maladies
-        disease_score = NutritionEngine._check_diseases(
+        disease_score = self._check_diseases(
             dish_data,
             health_profile.get('diseases', []),
             health_profile.get('weight', 70),
@@ -170,7 +170,7 @@ class NutritionEngine:
         results['detailed_breakdown']['disease_score'] = disease_score
         
         # 3. Équilibre nutritionnel
-        nutrition_score = NutritionEngine._check_nutrition(dish_data, results)
+        nutrition_score = self._check_nutrition(dish_data, results)
         results['detailed_breakdown']['nutrition_score'] = nutrition_score
         
         # 4. Score final pondéré
@@ -181,14 +181,14 @@ class NutritionEngine:
         )
         
         results['score'] = int(final_score)
-        results['alert_level'] = NutritionEngine._get_alert_level(final_score)
+        results['alert_level'] = self._get_alert_level(final_score)
         
         return results
     
     # ==================== VÉRIFICATION ALLERGÈNES ====================
     
     # @staticmethod
-    def _check_allergens(dish_data: Dict, user_allergens: List[str], results: Dict) -> float:
+    def _check_allergens(self, dish_data: Dict, user_allergens: List[str], results: Dict) -> float:
         """Vérifie présence d'allergènes"""
         if not user_allergens:
             return 100.0
@@ -218,7 +218,7 @@ class NutritionEngine:
                 if keyword in dish_text:
                     detected_allergens.append(allergen)
                     results['allergen_alerts'].append({
-                        'allergen': allergen,
+                        'name': allergen,
                         'level': AlertLevel.CRITICAL.value,
                         'message': f'⛔ ALLERGÈNE DÉTECTÉ : {allergen}'
                     })
@@ -271,14 +271,14 @@ class NutritionEngine:
         if gi > self.DIABETES_RULES['gi_thresholds']['high']:
             score -= 30
             results['disease_alerts'].append({
-                'disease': 'Diabète',
+                'name': 'Diabète',
                 'level': AlertLevel.DANGER.value,
                 'message': f'🔴 IG élevé ({gi}) - Risque de pic glycémique'
             })
         elif gi > self.DIABETES_RULES['gi_thresholds']['medium']:
             score -= 15
             results['disease_alerts'].append({
-                'disease': 'Diabète',
+                'name': 'Diabète',
                 'level': AlertLevel.CAUTION.value,
                 'message': f'🟠 IG modéré ({gi}) - Consommer avec modération'
             })
@@ -289,7 +289,7 @@ class NutritionEngine:
         if carbs > max_carbs:
             score -= 20
             results['disease_alerts'].append({
-                'disease': 'Diabète',
+                'name': 'Diabète',
                 'level': AlertLevel.DANGER.value,
                 'message': f'🔴 Glucides excessifs ({carbs:.1f}g > {max_carbs}g)'
             })
@@ -319,14 +319,14 @@ class NutritionEngine:
             score -= penalty
             
             results['disease_alerts'].append({
-                'disease': 'Hypertension',
+                'name': 'Hypertension',
                 'level': AlertLevel.DANGER.value,
                 'message': f'🔴 Sodium excessif ({sodium:.0f}mg > {max_sodium}mg/repas)'
             })
         elif sodium > max_sodium * 0.75:
             score -= 15
             results['disease_alerts'].append({
-                'disease': 'Hypertension',
+                'name': 'Hypertension',
                 'level': AlertLevel.CAUTION.value,
                 'message': f'🟠 Sodium élevé ({sodium:.0f}mg)'
             })
@@ -343,7 +343,7 @@ class NutritionEngine:
         if sodium > 667:  # 2000mg/3 repas
             score -= 25
             results['disease_alerts'].append({
-                'disease': 'Foie',
+                'name': 'Foie',
                 'level': AlertLevel.DANGER.value,
                 'message': f'🔴 Sodium excessif - Risque de rétention d\'eau'
             })
@@ -370,7 +370,7 @@ class NutritionEngine:
             if keyword in dish_text:
                 score -= 20
                 results['disease_alerts'].append({
-                    'disease': 'Cancer',
+                    'name': 'Cancer',
                     'level': AlertLevel.CAUTION.value,
                     'message': f'🟠 Éviter : {keyword}'
                 })
@@ -396,7 +396,7 @@ class NutritionEngine:
         if potassium > 667:  # 2000mg/3 repas
             score -= 30
             results['disease_alerts'].append({
-                'disease': 'Rein',
+                'name': 'Rein',
                 'level': AlertLevel.DANGER.value,
                 'message': f'🔴 Potassium excessif ({potassium:.0f}mg)'
             })
@@ -411,7 +411,7 @@ class NutritionEngine:
     # ==================== ÉQUILIBRE NUTRITIONNEL ====================
     
     # @staticmethod
-    def _check_nutrition(dish_data: Dict, results: Dict) -> float:
+    def _check_nutrition(self, dish_data: Dict, results: Dict) -> float:
         """Équilibre nutritionnel"""
         score = 100.0
         nutr = dish_data.get('nutritional_summary', {})
@@ -445,7 +445,7 @@ class NutritionEngine:
     # ==================== NIVEAU D'ALERTE ====================
     
     # @staticmethod
-    def _get_alert_level(score: float) -> AlertLevel:
+    def _get_alert_level(self, score: float) -> AlertLevel:
         """Détermine niveau d'alerte"""
         if score >= 75:
             return AlertLevel.SAFE
@@ -569,7 +569,8 @@ def analyze_dish(payload: DishAnalysisRequest, db: Session = Depends(db_instance
         'nutritional_summary': nutritional_summary
     }
     
-    analysis = NutritionEngine.analyze(dish_data, health_profile)
+    engine = NutritionEngine()
+    analysis = engine.analyze(dish_data, health_profile)
     
     return AnalysisResponse(**analysis)
 
@@ -635,7 +636,8 @@ def analyze_menu(payload: MenuAnalysisRequest, db: Session = Depends(db_instance
         'nutritional_summary': nutritional_summary
     }
     
-    analysis = NutritionEngine.analyze(dish_data, health_profile)
+    engine = NutritionEngine()
+    analysis = engine.analyze(dish_data, health_profile)
     
     return AnalysisResponse(**analysis)
 
@@ -740,7 +742,7 @@ def search_foods(
 
 # ==================== RECOMMANDATIONS ====================
 
-@router.get("/recommendations/{user_id}", response_model=RecommendationsResponse)
+@router.get("/recommendations/{user_id}")
 def get_recommendations(
     user_id: str,
     meal_type: Optional[str] = Query(None, regex="^(breakfast|lunch|dinner)$"),
@@ -764,7 +766,7 @@ def get_recommendations(
         3. Filtre et classe par score de compatibilité
         4. Retourne les meilleurs plats avec explications
     """
-    from api.models.analyze import Dish, DishIngredient, Ingredient
+    from api.schemas.analyze import Dish, DishIngredient, Ingredient
     
     # 1. Récupérer profil santé
     health_profile = get_user_health_profile(user_id, db)
@@ -802,7 +804,8 @@ def get_recommendations(
             'nutritional_summary': nutritional_summary
         }
         
-        analysis = NutritionEngine.analyze(dish_data, health_profile)
+        engine = NutritionEngine()
+        analysis = engine.analyze(dish_data, health_profile)
         
         # Ne garder que les plats sans allergènes critiques
         has_critical_allergen = any(
@@ -836,12 +839,18 @@ def get_recommendations(
     # 6. Générer conseils personnalisés
     personalized_tips = _generate_personalized_tips(health_profile)
     
-    return RecommendationsResponse(
-        user_id=user_id,
-        recommendations=[RecommendedDish(**dish) for dish in top_recommendations],
-        personalized_tips=personalized_tips,
-        count=len(top_recommendations)
-    )
+    # return RecommendationsResponse(
+    #     user_id=user_id,
+    #     recommendations=[RecommendedDish(**dish) for dish in top_recommendations],
+    #     personalized_tips=personalized_tips,
+    #     count=len(top_recommendations)
+    # )
+    return {
+        'user_id': user_id,
+        'recommendations': top_recommendations,
+        'personalized_tips': personalized_tips,
+        'count': len(top_recommendations)
+    }
 
 
 def _generate_recommendation_reason(analysis: Dict, health_profile: Dict) -> str:
@@ -991,6 +1000,7 @@ def suggest_alternatives(
     
     original_nutr = calculate_dish_nutrition(dish_id, db)
     
+    engine = NutritionEngine()
     original_analysis = NutritionEngine.analyze(
         {
             'name': original_dish.name,
@@ -1020,6 +1030,7 @@ def suggest_alternatives(
     # 6. Analyser et scorer les alternatives
     scored_alternatives = []
     
+    engine = NutritionEngine()
     for alt_dish in alternative_dishes:
         alt_ingredients = db.query(Ingredient).join(
             DishIngredient,
@@ -1028,7 +1039,7 @@ def suggest_alternatives(
         
         alt_nutr = calculate_dish_nutrition(str(alt_dish.id), db)
         
-        alt_analysis = NutritionEngine.analyze(
+        alt_analysis = engine.analyze(
             {
                 'name': alt_dish.name,
                 'ingredients': [{'name': ing.name} for ing in alt_ingredients],

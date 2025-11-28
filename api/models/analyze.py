@@ -8,11 +8,17 @@ class AlertLevel(str, Enum):
     DANGER = "danger"
     CRITICAL = "critical"
 
+# class AllergenAlert(BaseModel):
+#     # type: str
+#     allergen: str
+#     level: AlertLevel
+#     message: str
+#     # details: Optional[Dict] = None
+
 class Alert(BaseModel):
-    type: str
+    name: str
     level: AlertLevel
     message: str
-    details: Optional[Dict] = None
     
 class DiseaseType(Enum):
     """Types de maladies supportées"""
@@ -25,7 +31,8 @@ class DiseaseType(Enum):
 class AnalysisResponse(BaseModel):
     score: int = Field(..., ge=0, le=100)
     alert_level: AlertLevel
-    alerts: List[Alert]
+    allergen_alerts: List[Alert]
+    disease_alerts: List[Alert]
     recommendations: List[str]
     alternatives: List[str]
     nutritional_summary: Dict[str, Any]

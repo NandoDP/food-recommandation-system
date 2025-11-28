@@ -1090,8 +1090,3 @@ Ce système est un **outil d'aide à la décision** et ne remplace PAS :
 **Dernière mise à jour:** 26 novembre 2024  
 **Auteur:** Système de Recommandation Alimentaire - Master 1
 ```
-
-Réessayer
-
-[Claude peut faire des erreurs.\
-Assurez-vous de vérifier ses réponses.](https://support.anthropic.com/en/articles/8525154-claude-is-providing-incorrect-or-misleading-responses-what-s-going-on)

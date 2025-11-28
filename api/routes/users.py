@@ -2,31 +2,28 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from api.core.database import Database
 from api.core.security import security
-from api.models.users import User
-from api.models.users import HealthProfile
-from api.schemas.auth import UserLogin, UserRegister, UserResponse
-from api.deps import get_current_user
+from api.schemas.users import User, HealthProfile
+from api.schemas.auth import UserRegister
 
 router = APIRouter(prefix="/users", tags=["Users"])
 db_instance = Database()
 
 @router.post("/register")
-
-
 def register_user(user_data: UserRegister, db: Session = Depends(db_instance.get_db)):
     """Inscription d'un nouvel utilisateur avec clé API automatique"""
     # Vérifier si l'utilisateur existe
-    if db.query(User).filter(User.email == user_data.email).first():
+    if db.query(User).filter(User.id == user_data.id).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
     
     # Créer l'utilisateur
-    hashed_password = security.hash_password(user_data.password)
+    # hashed_password = security.hash_password(user_data.password)
     db_user = User(
-        email=user_data.email,
-        hashed_password=hashed_password,
+        # email=user_data.email,
+        # hashed_password=hashed_password,
+        id=user_data.id,
         last_name=user_data.last_name,
         first_name=user_data.first_name,
         birth_date=user_data.birth_date,
@@ -43,18 +40,18 @@ def register_user(user_data: UserRegister, db: Session = Depends(db_instance.get
     
     return {"message": "User registered successfully", "user_id": db_user.id}
 
-@router.post("/login")
-def login_user(credentials: UserLogin, db: Session = Depends(db_instance.get_db)):
-    """Connexion utilisateur avec information de clé API"""
-    user = db.query(User).filter(User.email == credentials.email).first()
+# @router.post("/login")
+# def login_user(credentials: UserLogin, db: Session = Depends(db_instance.get_db)):
+#     """Connexion utilisateur avec information de clé API"""
+#     user = db.query(User).filter(User.email == credentials.email).first()
     
-    if not user or not security.verify_password(credentials.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials"
-        )
+#     if not user or not security.verify_password(credentials.password, user.hashed_password):
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail="Invalid credentials"
+#         )
     
-    return {"message": "Login successful", "user_id": user.id}
+#     return {"message": "Login successful", "user_id": user.id}
 
 @router.get("/{id}/profile")
 def get_user_profile(id: str, db: Session = Depends(db_instance.get_db)):
@@ -82,7 +79,7 @@ def get_user_profile(id: str, db: Session = Depends(db_instance.get_db)):
                 "id": str(user.id),
                 "first_name": user.first_name,
                 "last_name": user.last_name,
-                "email": user.email,
+                # "email": user.email,
                 "gender": user.gender,
                 "weight": user.weight,
                 "height": user.height,
@@ -107,7 +104,7 @@ def get_user_profile(id: str, db: Session = Depends(db_instance.get_db)):
             "id": str(user.id),
             "first_name": user.first_name,
             "last_name": user.last_name,
-            "email": user.email,
+            # "email": user.email,
             "gender": user.gender,
             "weight": user.weight,
             "height": user.height,
@@ -120,7 +117,7 @@ def get_user_profile(id: str, db: Session = Depends(db_instance.get_db)):
     }
 
 
-@router.get("/me", response_model=UserResponse)
-def get_current_user_info(current_user: User = Depends(get_current_user)):
-    """Obtenir les informations de l'utilisateur connecté"""
-    return current_user
+# @router.get("/me", response_model=UserResponse)
+# def get_current_user_info(current_user: User = Depends(get_current_user)):
+#     """Obtenir les informations de l'utilisateur connecté"""
+#     return current_user

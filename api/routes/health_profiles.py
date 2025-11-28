@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from uuid import UUID
+# from uuid import UUID
 
-from api.models.users import HealthProfile, Disease, Allergen
+from api.schemas.users import HealthProfile, Disease, Allergen, User
 from api.core.database import Database
 
-from api.models.users import User
 from api.models.health_profile import (
     HealthProfileCreate,
     HealthProfileUpdate,
@@ -16,6 +15,16 @@ from api.models.health_profile import (
 db_instance = Database()
 
 router = APIRouter(prefix="/health-profiles", tags=["Health Profiles"])
+
+@router.get("/diseases")
+def list_diseases(db: Session = Depends(db_instance.get_db)):
+    diseases = db.query(Disease).all()
+    return [{"id": d.id, "name": d.name, "description": d.description} for d in diseases]
+
+@router.get("/allergens")
+def list_allergens(db: Session = Depends(db_instance.get_db)):
+    allergens = db.query(Allergen).all()
+    return [{"id": a.id, "name": a.name, "category": a.category} for a in allergens]
 
 @router.post("/", status_code=201)
 def create_health_profile(payload: HealthProfileCreate, db: Session = Depends(db_instance.get_db)):
@@ -39,12 +48,12 @@ def create_health_profile(payload: HealthProfileCreate, db: Session = Depends(db
     db.commit()
     db.refresh(profile)
 
-    return {"message": "Health profile created", "id": profile.id}
+    return {"message": "Health profile created", "id": str(profile.id)}
 
 
 
 @router.get("/{user_id}")
-def get_health_profile(user_id: UUID, db: Session = Depends(db_instance.get_db)):
+def get_health_profile(user_id: str, db: Session = Depends(db_instance.get_db)):
     profile = db.query(HealthProfile).filter(HealthProfile.user_id == user_id).first()
 
     if not profile:
@@ -61,7 +70,7 @@ def get_health_profile(user_id: UUID, db: Session = Depends(db_instance.get_db))
 
 
 @router.put("/{id}")
-def update_health_profile(id: UUID, payload: HealthProfileUpdate, db: Session = Depends(db_instance.get_db)):
+def update_health_profile(id: str, payload: HealthProfileUpdate, db: Session = Depends(db_instance.get_db)):
     profile = db.query(HealthProfile).filter(HealthProfile.id == id).first()
 
     if not profile:
@@ -80,7 +89,7 @@ def update_health_profile(id: UUID, payload: HealthProfileUpdate, db: Session = 
 
 
 @router.post("/{id}/diseases")
-def add_disease(id: UUID, payload: DiseaseAdd, db: Session = Depends(db_instance.get_db)):
+def add_disease(id: str, payload: DiseaseAdd, db: Session = Depends(db_instance.get_db)):
     profile = db.query(HealthProfile).filter(HealthProfile.id == id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Health profile not found")
@@ -100,7 +109,7 @@ def add_disease(id: UUID, payload: DiseaseAdd, db: Session = Depends(db_instance
 
 
 @router.post("/{id}/allergens")
-def add_allergen(id: UUID, payload: AllergenAdd, db: Session = Depends(db_instance.get_db)):
+def add_allergen(id: str, payload: AllergenAdd, db: Session = Depends(db_instance.get_db)):
     profile = db.query(HealthProfile).filter(HealthProfile.id == id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Health profile not found")
@@ -119,7 +128,7 @@ def add_allergen(id: UUID, payload: AllergenAdd, db: Session = Depends(db_instan
 
 
 @router.delete("/{id}/diseases/{disease_id}")
-def remove_disease(id: UUID, disease_id: UUID, db: Session = Depends(db_instance.get_db)):
+def remove_disease(id: str, disease_id: str, db: Session = Depends(db_instance.get_db)):
     profile = db.query(HealthProfile).filter(HealthProfile.id == id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Health profile not found")
@@ -135,3 +144,4 @@ def remove_disease(id: UUID, disease_id: UUID, db: Session = Depends(db_instance
     db.commit()
 
     return {"message": "Disease removed"}
+

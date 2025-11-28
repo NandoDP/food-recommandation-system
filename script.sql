@@ -1,11 +1,12 @@
 CREATE OR REPLACE TABLE users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    -- id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id TEXT PRIMARY KEY,
     last_name TEXT NOT NULL, 
     first_name TEXT NOT NULL, 
-    email TEXT UNIQUE,
-    hashed_password TEXT NOT NULL,
+    -- email TEXT UNIQUE,
+    -- hashed_password TEXT NOT NULL,
     birth_date DATE, 
-    gender TEXT NOT NULL, 
+    gender TEXT, 
     weight bigint, 
     height bigint,
     registration_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -29,7 +30,7 @@ CREATE OR REPLACE TABLE allergens (
 
 CREATE OR REPLACE TABLE health_profiles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
     intolerances TEXT,
     physical_activity_level TEXT CHECK (physical_activity_level IN ('sedentary', 'light', 'moderate', 'active', 'very_active'))
 );

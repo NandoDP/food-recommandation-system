@@ -6,11 +6,8 @@ from fastapi.exceptions import RequestValidationError
 import time
 import uvicorn
 from api.core.config import settings
-# from api.core.database import engine, Base
 from api.router import api_router
 
-# Créer les tables
-# Base.metadata.create_all(bind=engine)
 
 # Initialiser FastAPI
 app = FastAPI(
@@ -91,32 +88,3 @@ def health_check():
 
 # # Inclusion des routers
 app.include_router(api_router)
-
-# Désactivation temporaire de la gestion des clés API pour se concentrer sur Teranga AI
-# app.include_router(
-#     api_keys.router,
-#     prefix=f"{settings.API_V1_STR}/api-keys",
-#     tags=["API Keys Management"]
-# )
-
-# app.include_router(
-#     teranga.router,
-#     prefix=f"{settings.API_V1_STR}",
-#     tags=["Teranga AI"]
-# )
-
-# Désactivation temporaire de l'admin pour se concentrer sur Teranga AI
-# app.include_router(
-#     admin.router,
-#     prefix=f"{settings.API_V1_STR}/admin",
-#     tags=["Administration"]
-# )
-
-# if __name__ == "__main__":
-#     uvicorn.run(
-#         "api.main:app",
-#         host="0.0.0.0",
-#         port=8000,
-#         reload=True,
-#         log_level="info"
-#     )

@@ -1,20 +1,48 @@
-gradio 
-psutil
-numpy 
-requests
-python-dotenv
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-sqlalchemy==2.0.23
+# Core dependencies
+numpy==1.26.0
+requests==2.31.0
+python-dotenv==1.0.0
+psutil==5.9.6
+
+# FastAPI ecosystem
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+httpx==0.26.0
+
+# Database
 psycopg2-binary==2.9.9
+sqlalchemy==2.0.25
 alembic==1.13.1
-pydantic==2.5.2
+
+# Pydantic V2 (compatible avec spaCy 3.7+)
+pydantic==2.6.0
 pydantic-settings==2.1.0
-pydantic[email]
+pydantic[email]==2.6.0
+
+# Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.6
-httpx==0.25.2
+
+# Testing
 pytest==7.4.3
-pytest-asyncio==0.21.1
-python-telegram-bot
+pytest-asyncio==0.23.2
+
+# Telegram bot
+python-telegram-bot==20.7
+
+# NLP - spaCy avec dépendances compatibles
+spacy==3.7.4
+pydantic<3.0.0,>=2.0.0
+
+# Text processing
+rapidfuzz==3.6.1
+
+# Data visualization (for notebooks)
+matplotlib==3.8.2
+seaborn==0.13.1
+pandas==2.1.4
+
+# Jupyter support
+jupyter==1.0.0
+ipykernel==6.29.0

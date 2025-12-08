@@ -14,8 +14,12 @@ class Dish(Base):
     description = Column(String)
     meal_type = Column(String)
     cuisine_origin = Column(String)
+    method = Column(String)
     
     dish_ingredients = relationship("DishIngredient", back_populates="dish")
+    
+    class Config:
+        from_attributes = True
 
 class DishIngredient(Base):
     __tablename__ = "dish_ingredients"
@@ -26,6 +30,9 @@ class DishIngredient(Base):
     
     dish = relationship("Dish", back_populates="dish_ingredients")
     ingredient = relationship("Ingredient", back_populates="dish_ingredients")
+    
+    class Config:
+        from_attributes = True
 
 class Ingredient(Base):
     __tablename__ = "ingredients"
@@ -35,6 +42,9 @@ class Ingredient(Base):
     
     food = relationship("Food", back_populates="ingredients")
     dish_ingredients = relationship("DishIngredient", back_populates="ingredient")
+    
+    class Config:
+        from_attributes = True
 
 class Food(Base):
     __tablename__ = "foods"
@@ -45,3 +55,6 @@ class Food(Base):
     glycemic_index = Column(Integer)
     
     ingredients = relationship("Ingredient", back_populates="food")
+    
+    class Config:
+        from_attributes = True

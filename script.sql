@@ -78,6 +78,7 @@ CREATE OR REPLACE TABLE dishes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     description TEXT,
+    method TEXT,
     meal_type TEXT CHECK (meal_type IN ('breakfast', 'lunch', 'dinner')),
     cuisine_origin TEXT
 );

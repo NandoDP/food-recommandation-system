@@ -23,6 +23,9 @@ class User(Base):
     height = Column(Integer)
     registration_date = Column(DateTime, server_default=func.now())
     language = Column(String, default="fr")
+    
+    class Config:
+        from_attributes = True
 
 class Disease(Base):
     __tablename__ = "diseases"
@@ -33,6 +36,9 @@ class Disease(Base):
     severity_level = Column(String, nullable=True)
     general_recommendations = Column(Text, nullable=True)
     
+    class Config:
+        from_attributes = True
+    
 class Allergen(Base):
     __tablename__ = "allergens"
 
@@ -40,6 +46,9 @@ class Allergen(Base):
     name = Column(String, unique=True, index=True, nullable=False)
     category = Column(Text, nullable=False)
     danger_level = Column(String, nullable=False)
+    
+    class Config:
+        from_attributes = True
     
 # ---------------------------
 # Association Tables (M2M)
@@ -81,3 +90,6 @@ class HealthProfile(Base):
         secondary="health_profile_allergens",
         # back_populates="health_profiles"
     )
+    
+    class Config:
+        from_attributes = True

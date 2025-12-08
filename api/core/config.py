@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+import os
 
 class Settings(BaseSettings):
     # API Configuration
@@ -7,7 +8,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # Database
-    DATABASE_URL: str = "postgresql+psycopg2://postgres:nando@localhost:5432/nutrition_westaf"
+    DATABASE_URL: str = os.getenv("DATABASE_URL", None)
     
     # CORS
     ALLOWED_ORIGINS: list = ["*"]  # À restreindre en production

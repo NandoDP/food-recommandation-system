@@ -103,11 +103,3 @@ Remarques: les colonnes `chronic_diseases_ids` et `allergies_ids` sont des table
 - Normaliser l'objet `nutritional_values` (JSONB) en colonnes ou en table séparée si vous avez besoin de requêtes fréquentes sur des éléments individuels (ex. `calories`, `protein_g`).
 - Clarifier les unités pour `weight`, `height`, `sodium_content`, `potassium_content` et documenter le format de `nutritional_values`.
 
----
-
-Si vous voulez, je peux:
-- Générer automatiquement les scripts de migration pour normaliser les relations `UUID[]` en tables d'association.
-- Ajouter ces descriptions dans `docs.md` ou produire une version imprimable (PDF).
-- Créer des exemples JSON pour le champ `nutritional_values`.
-
-Indiquez la suite souhaitée.

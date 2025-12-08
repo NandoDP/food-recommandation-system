@@ -18,6 +18,9 @@ class UserRegister(BaseModel):
     height: Optional[int] = None
     registration_date: Optional[str] = None
     language: Optional[str] = "fr"
+    
+    class Config:
+        from_attributes = True
 
 class UserResponse(BaseModel):
     id: int

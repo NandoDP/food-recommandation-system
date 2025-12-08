@@ -39,7 +39,7 @@
 - [x] Rechercher index glycémique des aliments (diabète)
 - [x] Identifier teneur en sodium (problèmes hépatiques/HTA)
 - [-] Documenter 30-40 plats locaux typiques (thiébou, yassa, mafé, etc.)
-- [-] Lister ingrédients de chaque plat
+- [x] Lister ingrédients de chaque plat
 
 #### Règles Métier - Diabète
 - [x] Définir seuils glycémiques (IG < 55 faible, 55-70 moyen, >70 élevé)
@@ -131,7 +131,7 @@
 #### API Endpoints - Profil Santé
 - [x] `POST /api/health-profiles` - Créer profil santé
 - [x] `GET /api/health-profiles/:userId` - Récupérer profil
-- [ ] `PUT /api/health-profiles/:id` - Mettre à jour
+- [x] `PUT /api/health-profiles/:id` - Mettre à jour
 - [x] `POST /api/health-profiles/:id/diseases` - Ajouter maladie
 - [x] `POST /api/health-profiles/:id/allergens` - Ajouter allergène
 - [x] `DELETE /api/health-profiles/:id/diseases/:diseaseId` - Retirer maladie
@@ -147,16 +147,16 @@
 - [ ] `GET /api/foods/:id` - Détails aliment
 - [x] `GET /api/foods/search?q=` - Recherche aliment
 - [x] `GET /api/dishes` - Liste plats
-- [ ] `GET /api/dishes/:id` - Détails plat avec ingrédients
+- [x] `GET /api/dishes/:id` - Détails plat avec ingrédients
 
 #### Logique Métier - Module Analyse
 - [ ] Fonction `extractIngredients(menuText)` - Extraire ingrédients du texte
-- [ ] Fonction `identifyAllergens(ingredients)` - Détecter allergènes
+- [x] Fonction `identifyAllergens(ingredients)` - Détecter allergènes
 - [ ] Fonction `calculateGlycemicLoad(dish)` - Calculer charge glycémique
 - [ ] Fonction `checkRestrictions(dish, healthProfile)` - Vérifier restrictions
-- [ ] Fonction `calculateCompatibilityScore(dish, healthProfile)` - Score 0-100
-- [ ] Fonction `generateAlerts(analysis)` - Générer alertes colorées
-- [ ] Fonction `suggestAlternatives(dish, restrictions)` - Alternatives
+- [x] Fonction `calculateCompatibilityScore(dish, healthProfile)` - Score 0-100
+- [x] Fonction `generateAlerts(analysis)` - Générer alertes colorées
+- [x] Fonction `suggestAlternatives(dish, restrictions)` - Alternatives
 
 #### Intégration IA/NLP
 - [ ] Choisir API NLP (Claude API, OpenAI, ou Hugging Face)
@@ -189,58 +189,58 @@
 
 #### Choix de Plateforme
 - [x] Décider priorité : Telegram (plus simple) ou WhatsApp
-- [ ] Créer compte développeur sur plateforme choisie
-- [ ] Lire documentation officielle
+- [x] Créer compte développeur sur plateforme choisie
+- [x] Lire documentation officielle
 
 #### Telegram Bot (Recommandé pour MVP)
-- [ ] Créer bot via @BotFather
-- [ ] Obtenir token API
-- [ ] Installer SDK/bibliothèque (python-telegram-bot ou node-telegram-bot-api)
-- [ ] Configurer webhook ou polling
-- [ ] Tester connexion basique
+- [x] Créer bot via @BotFather
+- [x] Obtenir token API
+- [x] Installer SDK/bibliothèque (python-telegram-bot ou node-telegram-bot-api)
+- [x] Configurer webhook ou polling
+- [x] Tester connexion basique
 
-#### WhatsApp Bot (Alternative)
+<!-- #### WhatsApp Bot (Alternative)
 - [ ] S'inscrire à Twilio ou WhatsApp Business API
 - [ ] Obtenir numéro test
 - [ ] Configurer webhook
-- [ ] Vérifier limitations free tier
+- [ ] Vérifier limitations free tier -->
 
 #### Flux de Conversation - Onboarding
-- [ ] Message de bienvenue `/start`
-- [ ] Demander nom/prénom
-- [ ] Demander âge/genre (optionnel)
-- [ ] Questionnaire maladies chroniques (menu à choix)
-- [ ] Questionnaire allergies (menu à choix)
-- [ ] Confirmation profil créé
-- [ ] Sauvegarder dans base de données
+- [x] Message de bienvenue `/start`
+- [x] Demander nom/prénom
+- [-] Demander âge/genre (optionnel)
+- [x] Questionnaire maladies chroniques (menu à choix)
+- [x] Questionnaire allergies (menu à choix)
+- [x] Confirmation profil créé
+- [x] Sauvegarder dans base de données
 
 #### Flux de Conversation - Analyse Menu
-- [ ] Commande `/analyser` ou message direct
-- [ ] Demander description du menu
-- [ ] Envoyer texte à API backend
-- [ ] Afficher résultat avec emojis (🟢🟠🔴)
+- [x] Commande `/analyser` ou message direct
+- [x] Demander description du menu
+- [x] Envoyer texte à API backend
+- [x] Afficher résultat avec emojis (🟢🟠🔴)
 - [ ] Lister ingrédients détectés
-- [ ] Afficher alertes si nécessaire
-- [ ] Proposer alternatives si menu incompatible
+- [x] Afficher alertes si nécessaire
+- [x] Proposer alternatives si menu incompatible
 
 #### Flux de Conversation - Commandes Utiles
-- [ ] `/profil` - Voir son profil santé
-- [ ] `/modifier` - Modifier profil
-- [ ] `/aide` - Menu d'aide
+- [x] `/profil` - Voir son profil santé
+- [x] `/modifier` - Modifier profil
+- [x] `/aide` - Menu d'aide
 - [ ] `/historique` - Voir dernières analyses (optionnel)
-- [ ] `/recommandations` - Idées de menus
+- [x] `/recommandations` - Idées de menus
 
 #### Gestion des États Conversation
-- [ ] Implémenter machine à états (onboarding, idle, analyzing)
-- [ ] Gérer contexte utilisateur
+- [x] Implémenter machine à états (onboarding, idle, analyzing)
+- [x] Gérer contexte utilisateur
 - [ ] Timeout si inactivité
 - [ ] Gérer erreurs utilisateur (commandes invalides)
 
 #### Interface Utilisateur Chatbot
-- [ ] Utiliser boutons interactifs (inline keyboard)
-- [ ] Créer menus de navigation clairs
-- [ ] Ajouter emojis pour clarté
-- [ ] Formatter messages proprement (Markdown/HTML)
+- [x] Utiliser boutons interactifs (inline keyboard)
+- [x] Créer menus de navigation clairs
+- [x] Ajouter emojis pour clarté
+- [x] Formatter messages proprement (Markdown/HTML)
 - [ ] Limiter longueur des messages
 
 #### Tests Chatbot

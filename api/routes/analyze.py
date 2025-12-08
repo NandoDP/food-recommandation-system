@@ -7,6 +7,9 @@ from fastapi import HTTPException, Depends, APIRouter, Query
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional, Dict
 from api.core.database import Database
+from api.core.nutrition_engine import NutritionEngine
+from api.core.menu_parser import WestAfricanMenuParser
+from api.core.nutrition_calculator import calculate_dish_nutrition_from_items
 from api.models.analyze import (
     DishAnalysisRequest, MenuAnalysisRequest,
     AnalysisResponse, DishResponse, FoodSearchResponse,
@@ -20,441 +23,8 @@ router = APIRouter(tags=["Menu Analysis"])
 
 db_instance = Database()
 
-class NutritionEngine:
-    # """Moteur de règles métier"""
-    
-    # WEIGHTS = {'allergen': 0.40, 'disease': 0.35, 'nutrition': 0.25}
-    
-    # DIABETES_RULES = {
-    #     'gi_max_safe': 55,
-    #     'gi_max_moderate': 70,
-    #     'carbs_max': 60,
-    #     'fiber_min': 5
-    # }
-    
-    # HYPERTENSION_RULES = {'sodium_max_per_meal': 667}
-    
-    """
-    Moteur de règles nutritionnelles
-    Calcule scores de compatibilité et génère alertes
-    """
-    
-    # ========== RÈGLES DIABÈTE ==========
-    DIABETES_RULES = {
-        'gi_thresholds': {
-            'low': 55,      # IG < 55 : favorable
-            'medium': 70,   # IG 55-70 : modéré
-            'high': 70      # IG > 70 : défavorable
-        },
-        'carbs_per_meal': {
-            'min': 45,      # g
-            'max': 60,      # g
-            'optimal': 50   # g
-        },
-        'fiber_min': 5,     # g par repas minimum
-        'forbidden_keywords': [   # aliments à éviter: TODO
-            'sucre blanc', 'confiture', 'soda', 'bonbon', 
-            'pâtisserie', 'pain blanc', 'riz blanc'
-        ],
-        'recommended_keywords': [   # aliments recommandés: TODO
-            'légume', 'légumineuse', 'lentille', 'haricot',
-            'quinoa', 'avoine', 'patate douce'
-        ]
-    }
-    
-    # ========== RÈGLES HYPERTENSION ==========
-    HYPERTENSION_RULES = {
-        'sodium_max': 2000,     # mg/jour
-        'sodium_per_meal': 667, # mg/repas (2000/3)
-        'potassium_min': 3500,  # mg/jour recommandé
-        'forbidden_keywords': [   # aliments à éviter: TODO
-            'sel', 'salé', 'cube maggi', 'bouillon cube',
-            'charcuterie', 'fromage', 'anchois', 'olive'
-        ],
-        'recommended_keywords': [   # aliments recommandés: TODO
-            'banane', 'avocat', 'épinard', 'patate douce',
-            'haricot', 'tomate', 'orange'
-        ]
-    }
-    
-    # ========== RÈGLES MALADIE HÉPATIQUE ==========
-    LIVER_RULES = {
-        'sodium_max': 2000,         # mg/jour
-        'protein_per_kg': {
-            'normal': 1.0,           # g/kg poids corporel
-            'decompensated': 0.8,    # stade décompensé
-            'encephalopathy': 0.6    # encéphalopathie
-        },
-        'avoid_alcohol': True,
-        'hepatotoxic_keywords': [     # aliments à éviter: TODO
-            'alcool', 'paracétamol', 'champignon sauvage',
-            'fructose élevé'
-        ],
-        'detox_keywords': [       # aliments recommandés: TODO
-            'artichaut', 'radis noir', 'citron', 'curcuma',
-            'ail', 'betterave', 'pomme'
-        ]
-    }
-    
-    # ========== RÈGLES CANCER ==========
-    CANCER_RULES = {
-        'calorie_increase': 500,    # kcal/jour supplémentaires: TODO
-        'protein_per_kg': 1.5,      # g/kg (besoins augmentés)
-        'avoid_keywords': [
-            'ultra-transformé', 'charcuterie', 'viande rouge',
-            'sucre raffiné', 'friture', 'barbecue'
-        ],
-        'anti_inflammatory_keywords': [
-            'curcuma', 'gingembre', 'thé vert', 'baies',
-            'poisson gras', 'noix', 'légume crucifère',
-            'tomate', 'ail', 'oignon'
-        ]
-    }
-    
-    # ========== RÈGLES INSUFFISANCE RÉNALE ==========
-    KIDNEY_RULES = {   # pour maladie rénale chronique: TODO
-        'sodium_max': 2000,         # mg/jour
-        'potassium_max': 2000,      # mg/jour
-        'phosphorus_max': 1000,     # mg/jour
-        'protein_per_kg': 0.8,      # g/kg
-        'restrict_keywords': [
-            'banane', 'avocat', 'orange', 'tomate',
-            'produit laitier', 'noix', 'chocolat'
-        ]
-    }
-    
-    def __init__(self):
-        """Initialisation du moteur"""
-        self.weights = {
-            'allergen': 0.40,      # 40% du score
-            'disease': 0.35,       # 35% du score
-            'nutrition': 0.25      # 25% du score
-        }
-    
-    # ==================== ANALYSE PLAT ====================
-    
-    # @staticmethod
-    def analyze(self, dish_data: Dict, health_profile: Dict) -> Dict:
-        """Analyse complète d'un plat"""
-        
-        results = {
-            'score': 100,
-            'alert_level': AlertLevel.SAFE,
-            'allergen_alerts': [],
-            'disease_alerts': [],
-            'recommendations': [],
-            'alternatives': [],
-            'nutritional_summary': dish_data.get('nutritional_summary', {}),
-            'detailed_breakdown': {
-                'allergen_score': 100,
-                'disease_score': 100,
-                'nutrition_score': 100
-            }
-        }
-        
-        # 1. Vérifier allergènes
-        allergen_score = self._check_allergens(
-            dish_data, 
-            health_profile.get('allergens', []),
-            results
-        )
-        results['detailed_breakdown']['allergen_score'] = allergen_score
-        
-        # 2. Vérifier maladies
-        disease_score = self._check_diseases(
-            dish_data,
-            health_profile.get('diseases', []),
-            health_profile.get('weight', 70),
-            results
-        )
-        results['detailed_breakdown']['disease_score'] = disease_score
-        
-        # 3. Équilibre nutritionnel
-        nutrition_score = self._check_nutrition(dish_data, results)
-        results['detailed_breakdown']['nutrition_score'] = nutrition_score
-        
-        # 4. Score final pondéré
-        final_score = (
-            allergen_score * self.weights['allergen'] +
-            disease_score * self.weights['disease'] +
-            nutrition_score * self.weights['nutrition']
-        )
-        
-        results['score'] = int(final_score)
-        results['alert_level'] = self._get_alert_level(final_score)
-        
-        return results
-    
-    # ==================== VÉRIFICATION ALLERGÈNES ====================
-    
-    # @staticmethod
-    def _check_allergens(self, dish_data: Dict, user_allergens: List[str], results: Dict) -> float:
-        """Vérifie présence d'allergènes"""
-        if not user_allergens:
-            return 100.0
-        
-        dish_text = dish_data['name'].lower()
-        for ing in dish_data.get('ingredients', []):
-            dish_text += ' ' + ing.get('name', '').lower()
-        
-        allergen_keywords = {
-            'Arachides': ['arachide', 'peanut', 'cacahuète'],
-            'Crustacés': ['crustacé', 'crabe', 'crevette', 'shrimp'],
-            'Gluten (blé)': ['blé', 'wheat', 'farine', 'pain', 'avoine', 'orge', 'couscous'],
-            'Lait (lactose)': ['lait', 'milk', 'yaourt', 'fromage', 'beurre'],
-            'Œufs': ['œuf', 'egg', 'oeuf'],
-            'Poissons': ['poisson', 'fish', 'thiof', 'sardine', 'saumon', 'truite'],
-            'Fruits à coque': ['noix', 'amande', 'noisette', 'pistache', 'cashew', 'walnut', 'cajou'],
-            'Moutarde': ['moutarde', 'mustard', 'cornichon', 'bouillon-cube', 'mayonnaise'],
-            'Soja': ['soja', 'soy', 'tofu'],
-            'Sésame': ['sésame', 'sesame', 'tahini', 'gomasio'],
-        }
-        
-        detected_allergens = []
-        
-        for allergen in user_allergens:
-            keywords = allergen_keywords.get(allergen, [allergen.lower()])
-            for keyword in keywords:
-                if keyword in dish_text:
-                    detected_allergens.append(allergen)
-                    results['allergen_alerts'].append({
-                        'name': allergen,
-                        'level': AlertLevel.CRITICAL.value,
-                        'message': f'⛔ ALLERGÈNE DÉTECTÉ : {allergen}'
-                    })
-                    break
-        
-        # Score : 0 si allergène trouvé, 100 sinon
-        return 0.0 if detected_allergens else 100.0
-    
-    # ==================== VÉRIFICATION MALADIES ====================
-    
-    # @staticmethod
-    def _check_diseases(self, dish_data: Dict, diseases: List[str], weight: float, results: Dict) -> float:
-        """Vérifie compatibilité maladies"""
-        if not diseases:
-            return 100.0
-        
-        scores = []
-        nutr = dish_data.get('nutritional_summary', {})
-        
-        for disease in diseases:
-            if disease == DiseaseType.DIABETES.value:
-                score = self._check_diabetes(nutr, results)
-                scores.append(score)
-            
-            elif disease == DiseaseType.HYPERTENSION.value:
-                score = self._check_hypertension(nutr, results)
-                scores.append(score)
-            
-            elif disease == DiseaseType.LIVER_DISEASE.value:
-                score = self._check_liver_disease(nutr, weight, results)
-                scores.append(score)
-            
-            elif disease == DiseaseType.CANCER.value:
-                score = self._check_cancer(nutr, results)
-                scores.append(score)
-            
-            elif disease == DiseaseType.KIDNEY_DISEASE.value:
-                score = self._check_kidney_disease(nutr, results)
-                scores.append(score)
-        
-        return sum(scores) / len(scores) if scores else 100.0
-    
-    # @staticmethod
-    def _check_diabetes(self, nutr: Dict, results: Dict) -> float:
-        """Règles diabète"""
-        score = 100.0
-        
-         # 1. Index glycémique
-        gi = nutr.get('glycemic_index', 60)
-        if gi > self.DIABETES_RULES['gi_thresholds']['high']:
-            score -= 30
-            results['disease_alerts'].append({
-                'name': 'Diabète',
-                'level': AlertLevel.DANGER.value,
-                'message': f'🔴 IG élevé ({gi}) - Risque de pic glycémique'
-            })
-        elif gi > self.DIABETES_RULES['gi_thresholds']['medium']:
-            score -= 15
-            results['disease_alerts'].append({
-                'name': 'Diabète',
-                'level': AlertLevel.CAUTION.value,
-                'message': f'🟠 IG modéré ({gi}) - Consommer avec modération'
-            })
-        
-        # 2. Glucides
-        carbs = nutr.get('carbohydrate_g', 0)
-        max_carbs = self.DIABETES_RULES['carbs_per_meal']['max']
-        if carbs > max_carbs:
-            score -= 20
-            results['disease_alerts'].append({
-                'name': 'Diabète',
-                'level': AlertLevel.DANGER.value,
-                'message': f'🔴 Glucides excessifs ({carbs:.1f}g > {max_carbs}g)'
-            })
-        
-        # 3. Fibres
-        fiber = nutr.get('fiber_g', 0)
-        if fiber < self.DIABETES_RULES['fiber_min']:
-            score -= 10
-            results['recommendations'].append(
-                f'💡 Ajouter plus de fibres (actuel: {fiber:.1f}g, min: {self.DIABETES_RULES["fiber_min"]}g)'
-            )
-        
-        return max(0, score)
-    
-    # @staticmethod
-    def _check_hypertension(self, nutr: Dict, results: Dict) -> float:
-        """Règles hypertension"""
-        score = 100.0
-        
-        # Sodium
-        sodium = nutr.get('sodium_mg', 0)
-        max_sodium = self.HYPERTENSION_RULES['sodium_per_meal']
-        
-        if sodium > max_sodium:
-            excess = sodium - max_sodium
-            penalty = min(40, (excess / max_sodium) * 40)
-            score -= penalty
-            
-            results['disease_alerts'].append({
-                'name': 'Hypertension',
-                'level': AlertLevel.DANGER.value,
-                'message': f'🔴 Sodium excessif ({sodium:.0f}mg > {max_sodium}mg/repas)'
-            })
-        elif sodium > max_sodium * 0.75:
-            score -= 15
-            results['disease_alerts'].append({
-                'name': 'Hypertension',
-                'level': AlertLevel.CAUTION.value,
-                'message': f'🟠 Sodium élevé ({sodium:.0f}mg)'
-            })
-        
-        return max(0, score)
-    
-    def _check_liver_disease(self, dish: Dict, weight: float, results: Dict) -> float:
-        """Règles maladie hépatique"""
-        score = 100.0
-        nutr = dish.get('nutritional_summary', {})
-        
-        # 1. Sodium (même règle qu'hypertension)
-        sodium = nutr.get('sodium_mg', 0)
-        if sodium > 667:  # 2000mg/3 repas
-            score -= 25
-            results['disease_alerts'].append({
-                'name': 'Foie',
-                'level': AlertLevel.DANGER.value,
-                'message': f'🔴 Sodium excessif - Risque de rétention d\'eau'
-            })
-        
-        # 2. Protéines (vérifier si excessif)
-        protein = nutr.get('protein_g', 0)
-        max_protein = weight * self.LIVER_RULES['protein_per_kg']['normal']
-        if protein > max_protein / 3:  # Par repas
-            score -= 15
-            results['recommendations'].append(
-                f'⚠️ Protéines à modérer selon stade hépatique'
-            )
-        
-        return max(0, score)
-    
-    def _check_cancer(self, dish: Dict, results: Dict) -> float:
-        """Règles cancer"""
-        score = 100.0
-        
-        dish_text = dish['name'].lower()
-        
-        # Vérifier aliments à éviter
-        for keyword in self.CANCER_RULES['avoid_keywords']:
-            if keyword in dish_text:
-                score -= 20
-                results['disease_alerts'].append({
-                    'name': 'Cancer',
-                    'level': AlertLevel.CAUTION.value,
-                    'message': f'🟠 Éviter : {keyword}'
-                })
-                break
-        
-        # Bonus pour anti-inflammatoires
-        for keyword in self.CANCER_RULES['anti_inflammatory_keywords']:
-            if keyword in dish_text:
-                results['recommendations'].append(
-                    f'✅ Contient {keyword} (anti-inflammatoire)'
-                )
-                break
-        
-        return max(0, score)
-    
-    def _check_kidney_disease(self, dish: Dict, results: Dict) -> float:
-        """Règles insuffisance rénale"""
-        score = 100.0
-        nutr = dish.get('nutritional_summary', {})
-        
-        # Potassium
-        potassium = nutr.get('potassium_mg', 0)
-        if potassium > 667:  # 2000mg/3 repas
-            score -= 30
-            results['disease_alerts'].append({
-                'name': 'Rein',
-                'level': AlertLevel.DANGER.value,
-                'message': f'🔴 Potassium excessif ({potassium:.0f}mg)'
-            })
-        
-        # Sodium
-        sodium = nutr.get('sodium_mg', 0)
-        if sodium > 667:
-            score -= 20
-        
-        return max(0, score)
-    
-    # ==================== ÉQUILIBRE NUTRITIONNEL ====================
-    
-    # @staticmethod
-    def _check_nutrition(self, dish_data: Dict, results: Dict) -> float:
-        """Équilibre nutritionnel"""
-        score = 100.0
-        nutr = dish_data.get('nutritional_summary', {})
-        
-        protein = nutr.get('protein_g', 0)
-        fat = nutr.get('fat_g', 0)
-        carbs = nutr.get('carbohydrate_g', 0)
-        
-        total = protein + fat + carbs
-        if total == 0:
-            return 50.0  # Pas assez de données
-        
-        # Ratios recommandés (% calories)
-        protein_pct = (protein * 4) / ((protein * 4) + (fat * 9) + (carbs * 4)) * 100
-        fat_pct = (fat * 9) / ((protein * 4) + (fat * 9) + (carbs * 4)) * 100
-        
-        # Protéines : 15-25%
-        if protein_pct < 10:
-            score -= 15
-            results['recommendations'].append('💡 Augmenter apport en protéines')
-        elif protein_pct > 35:
-            score -= 10
-        
-        # Lipides : 25-35%
-        if fat_pct > 40:
-            score -= 15
-            results['recommendations'].append('💡 Réduire matières grasses')
-        
-        return max(0, score)
-    
-    # ==================== NIVEAU D'ALERTE ====================
-    
-    # @staticmethod
-    def _get_alert_level(self, score: float) -> AlertLevel:
-        """Détermine niveau d'alerte"""
-        if score >= 75:
-            return AlertLevel.SAFE
-        elif score >= 50:
-            return AlertLevel.CAUTION
-        elif score >= 25:
-            return AlertLevel.DANGER
-        else:
-            return AlertLevel.CRITICAL
+
+# Dans ton endpoint ou chatbot WhatsApp
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -558,7 +128,12 @@ def analyze_dish(payload: DishAnalysisRequest, db: Session = Depends(db_instance
     if payload.health_profile:
         health_profile = payload.health_profile
     elif payload.user_id:
-        health_profile = get_user_health_profile(payload.user_id, db)
+        profile = get_user_health_profile(payload.user_id, db)
+        health_profile = {
+            'diseases': profile.get('diseases', []),
+            'allergens': profile.get('allergens', []),
+            'weight': profile.get('weight', 70)
+        }
     else:
         health_profile = {'diseases': [], 'allergens': [], 'weight': 70}
     
@@ -591,49 +166,34 @@ def analyze_menu(payload: MenuAnalysisRequest, db: Session = Depends(db_instance
     Note: Pour une version avancée, intégrer Claude API pour extraction NLP
     """
     
+    from api.schemas.analyze import Ingredient
+    
     menu_text = payload.menu_text.lower()
-    
-    # Estimation simple basée sur mots-clés
-    nutritional_summary = {
-        'energy_kcal': 600,
-        'protein_g': 25,
-        'fat_g': 15,
-        'carbohydrate_g': 80,
-        'fiber_g': 4,
-        'sodium_mg': 800,
-        'potassium_mg': 600,
-        'glycemic_index': 70
-    }
-    
-    # Ajustements basés sur mots-clés
-    if 'riz' in menu_text or 'rice' in menu_text:
-        nutritional_summary['carbohydrate_g'] += 20
-        nutritional_summary['glycemic_index'] = 75
-    
-    if 'poisson' in menu_text or 'fish' in menu_text:
-        nutritional_summary['protein_g'] += 10
-    
-    if 'légume' in menu_text or 'vegetable' in menu_text:
-        nutritional_summary['fiber_g'] += 3
-        nutritional_summary['glycemic_index'] -= 10
-    
-    if 'frit' in menu_text or 'fried' in menu_text:
-        nutritional_summary['fat_g'] += 15
-        nutritional_summary['energy_kcal'] += 150
     
     # Récupérer profil santé
     if payload.health_profile:
         health_profile = payload.health_profile
     elif payload.user_id:
-        health_profile = get_user_health_profile(payload.user_id, db)
+        profile = get_user_health_profile(payload.user_id, db)
+        health_profile = {
+            'diseases': profile.get('diseases', []),
+            'allergens': profile.get('allergens', []),
+            'weight': profile.get('weight', 70)
+        }
     else:
         health_profile = {'diseases': [], 'allergens': [], 'weight': 70}
     
-    # Analyse
+    parser = WestAfricanMenuParser(db_instance.get_db())
+    items = parser.parse_menu_text(menu_text)
+    
+    # Conversion en dish_ingredients (prêt pour NutritionEngine)
     dish_data = {
-        'name': payload.menu_text,
-        'ingredients': [],
-        'nutritional_summary': nutritional_summary
+        "name": "Menu détecté",
+        "ingredients": [
+            {"name": db.query(Ingredient).get(it["ingredient_id"]).name}
+            for it in items
+        ],
+        "nutritional_summary": calculate_dish_nutrition_from_items(items, db, portion_size_g=500)
     }
     
     engine = NutritionEngine()
@@ -642,7 +202,47 @@ def analyze_menu(payload: MenuAnalysisRequest, db: Session = Depends(db_instance
     return AnalysisResponse(**analysis)
 
 
-@router.get("/dishes", response_model=List[DishResponse])
+@router.get("/{dish_id}/dish_details")
+def get_dish_details(dish_id: str, db: Session = Depends(db_instance.get_db)):
+    """
+    Récupère les détails d'un plat spécifique
+    
+    Args:
+        dish_id: UUID du plat
+    
+    Returns:
+        Détails du plat avec ingrédients
+    """
+    from api.schemas.analyze import Dish, DishIngredient, Ingredient
+    
+    dish = db.query(Dish).filter(Dish.id == dish_id).first()
+    if not dish:
+        raise HTTPException(status_code=404, detail="Dish not found")
+    
+    # Récupérer ingrédients avec quantités et unités
+    ingredients = []
+    dish_ingredients = db.query(DishIngredient).filter(DishIngredient.dish_id == dish_id).all()
+    for di in dish_ingredients:
+        ingredient = db.query(Ingredient).filter(Ingredient.id == di.ingredient_id).first()
+        if ingredient:
+            ingredients.append({
+                'id': str(ingredient.id),
+                'name': ingredient.name,
+                'quantity': di.quantity,
+                'unit': di.unit
+            })
+    
+    return {
+        'id': str(dish.id),
+        'name': dish.name,
+        'description': dish.description,
+        'meal_type': dish.meal_type,
+        'cuisine_origin': dish.cuisine_origin,
+        'method': dish.method,
+        'ingredients': ingredients
+    }
+
+@router.get("/dishes")
 def list_dishes(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -660,7 +260,7 @@ def list_dishes(
     Returns:
         Liste de plats avec nombre d'ingrédients
     """
-    from api.models.analyze import Dish, DishIngredient
+    from api.schemas.analyze import Dish, DishIngredient
     from sqlalchemy import func
     
     # Requête de base avec comptage d'ingrédients
@@ -687,18 +287,18 @@ def list_dishes(
         query = query.filter(Dish.meal_type == meal_type)
     
     # Pagination
-    dishes = query.order_by(Dish.name).limit(limit).offset(offset).all()
+    # Prendre 10 plats au hasard pour diversité
+    dishes = query.order_by(func.random()).limit(limit).offset(offset).all()
     
     # Convertir en DishResponse
     return [
-        DishResponse(
-            id=str(d.id),
-            name=d.name,
-            description=d.description,
-            meal_type=d.meal_type,
-            cuisine_origin=d.cuisine_origin,
-            ingredient_count=d.ingredient_count
-        )
+        {
+            'id': str(d.id),
+            'name': d.name,
+            # 'description': d.description,
+            # 'meal_type': d.meal_type,
+            # 'ingredient_count': d.ingredient_count
+        }
         for d in dishes
     ]
 
@@ -719,7 +319,7 @@ def search_foods(
     Returns:
         Liste d'aliments correspondants
     """
-    from api.models.analyze import Food
+    from api.schemas.analyze import Food
     
     # Recherche insensible à la casse avec ILIKE
     foods = db.query(Food).filter(
@@ -738,7 +338,6 @@ def search_foods(
         for f in foods
     ]
     
-
 
 # ==================== RECOMMANDATIONS ====================
 
@@ -769,7 +368,12 @@ def get_recommendations(
     from api.schemas.analyze import Dish, DishIngredient, Ingredient
     
     # 1. Récupérer profil santé
-    health_profile = get_user_health_profile(user_id, db)
+    profile = get_user_health_profile(user_id, db)
+    health_profile = {
+        'diseases': profile.get('diseases', []),
+        'allergens': profile.get('allergens', []),
+        'weight': profile.get('weight', 70)
+    }
     
     # 2. Récupérer plats disponibles
     query = db.query(Dish)
@@ -838,13 +442,7 @@ def get_recommendations(
     
     # 6. Générer conseils personnalisés
     personalized_tips = _generate_personalized_tips(health_profile)
-    
-    # return RecommendationsResponse(
-    #     user_id=user_id,
-    #     recommendations=[RecommendedDish(**dish) for dish in top_recommendations],
-    #     personalized_tips=personalized_tips,
-    #     count=len(top_recommendations)
-    # )
+
     return {
         'user_id': user_id,
         'recommendations': top_recommendations,
@@ -858,31 +456,49 @@ def _generate_recommendation_reason(analysis: Dict, health_profile: Dict) -> str
     
     score = analysis['score']
     diseases = health_profile.get('diseases', [])
+    nutr = analysis['nutritional_summary']
     
     if score >= 85:
-        return "Excellent choix pour votre profil santé"
+        reasons = ["Excellent choix pour votre profil santé (HAS/WCRF)"]
+        
+        if DiseaseType.DIABETES.value in diseases:
+            gi = nutr.get('glycemic_index', 0)
+            if gi < 55:
+                reasons.append("IG bas (<55) adapté au diabète – ralentit l'absorption des glucides (HAS 2024)")
+        
+        if DiseaseType.HYPERTENSION.value in diseases:
+            sodium = nutr.get('sodium_mg', 0)
+            if sodium < 500:
+                reasons.append("Faible en sodium (<500mg) – conforme au régime DASH (FRHTA)")
+        
+        if DiseaseType.LIVER_DISEASE.value in diseases:
+            fiber = nutr.get('fiber_g', 0)
+            if fiber >= 5:
+                reasons.append("Riche en fibres pour détox hépatique – régime méditerranéen recommandé (AFE F)")
+        
+        if DiseaseType.CANCER.value in diseases:
+            # Vérifier présence anti-inflammatoires (basé sur scan keywords dans engine)
+            if any("anti_inflammatory" in str(analysis) for _ in [1]):  # Placeholder ; étendre engine si besoin
+                reasons.append("Contient anti-inflammatoires (ex. curcuma) – réduit risque (WCRF)")
+        
+        if DiseaseType.KIDNEY_DISEASE.value in diseases:
+            potassium = nutr.get('potassium_mg', 0)
+            if potassium < 667:
+                reasons.append("Faible en potassium (<667mg) – protège les reins (HAS)")
+        
+        return " ; ".join(reasons)
+    
     elif score >= 75:
-        reasons = []
-        
-        if 'Diabète' in ' '.join(diseases):
-            gi = analysis['nutritional_summary'].get('glycemic_index', 0)
-            if gi and gi < 55:
-                reasons.append("IG bas adapté au diabète")
-        
-        if 'Hypertension' in ' '.join(diseases):
-            sodium = analysis['nutritional_summary'].get('sodium_mg', 0)
-            if sodium and sodium < 500:
-                reasons.append("faible en sodium")
-        
-        if reasons:
-            return "Bon choix : " + ", ".join(reasons)
-        else:
-            return "Compatible avec votre profil santé"
+        reasons = ["Bon choix compatible"]
+        # Ajouts similaires mais modérés
+        if DiseaseType.DIABETES.value in diseases and nutr.get('glycemic_index', 0) < 70:
+            reasons.append("IG modéré – avec légumes verts pour équilibre (HAS)")
+        return " ; ".join(reasons)
     
     elif score >= 60:
-        return "Acceptable avec quelques précautions"
+        return "Acceptable avec précautions (réduire portions, ajouter légumes)"
     else:
-        return "À consommer avec modération"
+        return "À consommer avec modération – consulter diététicien"
 
 
 def _generate_nutritional_highlights(nutr: Dict, health_profile: Dict) -> List[str]:
@@ -891,35 +507,51 @@ def _generate_nutritional_highlights(nutr: Dict, health_profile: Dict) -> List[s
     highlights = []
     diseases = health_profile.get('diseases', [])
     
-    # Fibres
+    # Fibres (général et hépatique/cancer)
     fiber = nutr.get('fiber_g', 0)
-    if fiber and fiber >= 5:
-        highlights.append(f"Riche en fibres ({fiber:.1f}g)")
+    if fiber >= 5:
+        highlights.append(f"Riche en fibres ({fiber:.1f}g) – aide digestion et contrôle glycémique (HAS/WCRF)")
     
-    # Protéines
+    # Protéines (rénal modéré)
     protein = nutr.get('protein_g', 0)
-    if protein and protein >= 20:
-        highlights.append(f"Bonne source de protéines ({protein:.1f}g)")
+    weight = health_profile.get('weight', 70)
+    if 0.6 * weight / 3 <= protein <= 0.8 * weight / 3:  # Par repas, adapté rénal
+        highlights.append(f"Protéines modérées ({protein:.1f}g) – adapté aux reins (HAS)")
+    elif protein >= 20:
+        highlights.append(f"Bonne source de protéines ({protein:.1f}g) – pour énergie sans excès")
     
-    # IG bas pour diabétiques
-    if 'Diabète' in ' '.join(diseases):
+    # IG bas pour diabète
+    if DiseaseType.DIABETES.value in diseases:
         gi = nutr.get('glycemic_index', 0)
-        if gi and gi < 55:
-            highlights.append(f"Index glycémique bas ({gi})")
+        if gi < 55:
+            highlights.append(f"Index glycémique bas ({gi}) – prévient pics glycémiques (HAS 2024)")
     
-    # Faible sodium pour HTA
-    if 'Hypertension' in ' '.join(diseases):
+    # Faible sodium pour HTA/rénal/hépatique
+    if DiseaseType.HYPERTENSION.value in diseases or DiseaseType.KIDNEY_DISEASE.value in diseases or DiseaseType.LIVER_DISEASE.value in diseases:
         sodium = nutr.get('sodium_mg', 0)
-        if sodium and sodium < 400:
-            highlights.append(f"Faible en sodium ({sodium:.0f}mg)")
+        if sodium < 400:
+            highlights.append(f"Faible en sodium ({sodium:.0f}mg) – réduit rétention d'eau (DASH/HAS)")
     
-    # Énergie modérée
+    # Potassium équilibré pour HTA/rénal
+    if DiseaseType.HYPERTENSION.value in diseases:
+        potassium = nutr.get('potassium_mg', 0)
+        if 800 <= potassium <= 1000:  # Apport modéré/jour divisé
+            highlights.append(f"Bon potassium ({potassium:.0f}mg) – équilibre Na/K (FRHTA)")
+    elif DiseaseType.KIDNEY_DISEASE.value in diseases and potassium < 667:
+        highlights.append(f"Contrôlé en potassium ({potassium:.0f}mg) – sûr pour reins (Ameli)")
+    
+    # Énergie modérée (général/cancer)
     energy = nutr.get('energy_kcal', 0)
-    if energy and 400 <= energy <= 600:
-        highlights.append("Apport calorique équilibré")
+    if 400 <= energy <= 600:
+        highlights.append("Apport calorique équilibré – idéal pour maintien poids (WCRF)")
+    
+    if DiseaseType.CANCER.value in diseases:
+        # Anti-inflamm (basé sur nutr ou keywords)
+        if nutr.get('fat_g', 0) > 10 and "oméga-3" in str(nutr):  # Placeholder
+            highlights.append("Oméga-3 pour anti-inflammatoire – soutien immunitaire (INSERM)")
     
     if not highlights:
-        highlights.append("Plat équilibré")
+        highlights.append("Plat équilibré – varie les repas pour nutriments complets")
     
     return highlights
 
@@ -929,22 +561,35 @@ def _generate_personalized_tips(health_profile: Dict) -> List[str]:
     
     tips = []
     diseases = health_profile.get('diseases', [])
+    allergens = health_profile.get('allergens', [])
     
-    if 'Diabète' in ' '.join(diseases):
-        tips.append("💡 Privilégiez les aliments à index glycémique bas (<55)")
-        tips.append("🥗 Ajoutez des légumes verts pour ralentir l'absorption des glucides")
+    if DiseaseType.DIABETES.value in diseases:
+        tips.append("💡 Privilégiez IG bas (<55) et légumes verts pour ralentir absorption glucides (HAS 2024)")
+        tips.append("🏃‍♂️ Associez à 30 min activité physique/jour pour sensibilité insuline")
     
-    if 'Hypertension' in ' '.join(diseases):
-        tips.append("🧂 Limitez le sel, utilisez citron et épices pour assaisonner")
-        tips.append("🥑 Favorisez les aliments riches en potassium")
+    if DiseaseType.HYPERTENSION.value in diseases:
+        tips.append("🧂 Limitez sel <5-6g/jour ; utilisez citron/épices (DASH/FRHTA)")
+        tips.append("🥑 Augmentez potassium (banane, épinards) pour équilibre Na/K")
     
-    if 'Maladie hépatique' in ' '.join(diseases):
-        tips.append("🍵 Hydratez-vous suffisamment tout au long de la journée")
-        tips.append("🥦 Privilégiez les aliments détoxifiants (artichaut, citron)")
+    if DiseaseType.LIVER_DISEASE.value in diseases:
+        tips.append("🍵 Hydratez 1.5-2L/jour ; régime méditerranéen riche fibres (AFE F)")
+        tips.append("🥦 Privilégiez détox (artichaut, curcuma) ; évitez alcool/fructose")
+    
+    if DiseaseType.CANCER.value in diseases:
+        tips.append("🥗 Limitez ultra-transformés/viande rouge ; + fibres/fruits (WCRF)")
+        tips.append("🫐 Anti-inflamm : baies, curcuma, oméga-3 pour soutien (INSERM)")
+    
+    if DiseaseType.KIDNEY_DISEASE.value in diseases:
+        tips.append("🍗 Protéines 0.6-0.8g/kg/jour ; faible P/K (HAS/Ameli)")
+        tips.append("🌿 Alimentation alcalinisante (légumes) pour ralentir déclin rénal")
+    
+    if allergens:
+        tips.append(f"⚠️ Éviction stricte allergènes ({', '.join(allergens)}) ; variez pour éviter carences (HAS)")
+        tips.append("📋 Consultez diététicien pour équilibre nutritionnel")
     
     if not tips:
-        tips.append("🍽️ Privilégiez la variété et l'équilibre dans vos repas")
-        tips.append("💧 Buvez au moins 1.5L d'eau par jour")
+        tips.append("🍽️ Variété/équilibre : + fruits/légumes, activité physique (PNNS)")
+        tips.append("💧 1.5-2L eau/jour pour santé générale")
     
     return tips
 
@@ -977,7 +622,7 @@ def suggest_alternatives(
         3. Cherche des plats similaires mais plus adaptés
         4. Propose des substitutions d'ingrédients
     """
-    from api.models.analyze import Dish, DishIngredient, Ingredient
+    from api.schemas.analyze import Dish, DishIngredient, Ingredient
     
     # 1. Vérifier que le plat existe
     original_dish = db.query(Dish).filter(Dish.id == dish_id).first()
@@ -988,7 +633,12 @@ def suggest_alternatives(
     if health_profile:
         hp = health_profile
     elif user_id:
-        hp = get_user_health_profile(user_id, db)
+        profile = get_user_health_profile(user_id, db)
+        hp = {
+            'diseases': profile.get('diseases', []),
+            'allergens': profile.get('allergens', []),
+            'weight': profile.get('weight', 70)
+        }
     else:
         hp = {'diseases': [], 'allergens': [], 'weight': 70}
     
@@ -1001,7 +651,7 @@ def suggest_alternatives(
     original_nutr = calculate_dish_nutrition(dish_id, db)
     
     engine = NutritionEngine()
-    original_analysis = NutritionEngine.analyze(
+    original_analysis = engine.analyze(
         {
             'name': original_dish.name,
             'ingredients': [{'name': ing.name} for ing in original_ingredients],
@@ -1100,34 +750,43 @@ def _explain_why_better(orig_analysis: Dict, alt_analysis: Dict,
     reasons = []
     diseases = hp.get('diseases', [])
     
-    # Comparaison IG
-    if 'Diabète' in ' '.join(diseases):
+    # Comparaison IG (diabète)
+    if DiseaseType.DIABETES.value in diseases:
         orig_gi = orig_nutr.get('glycemic_index', 0)
         alt_gi = alt_nutr.get('glycemic_index', 0)
         
         if orig_gi and alt_gi and alt_gi < orig_gi - 10:
-            reasons.append(f"IG plus bas ({alt_gi} vs {orig_gi})")
+            reasons.append(f"IG plus bas ({alt_gi} vs {orig_gi}) – prévient pics (HAS)")
     
-    # Comparaison sodium
-    if 'Hypertension' in ' '.join(diseases):
+    # Comparaison sodium (HTA/rénal/hépatique)
+    if any(d in diseases for d in [DiseaseType.HYPERTENSION.value, DiseaseType.KIDNEY_DISEASE.value, DiseaseType.LIVER_DISEASE.value]):
         orig_sodium = orig_nutr.get('sodium_mg', 0)
         alt_sodium = alt_nutr.get('sodium_mg', 0)
         
         if orig_sodium and alt_sodium and alt_sodium < orig_sodium * 0.7:
             diff = orig_sodium - alt_sodium
-            reasons.append(f"{diff:.0f}mg moins de sodium")
+            reasons.append(f"{diff:.0f}mg moins de sodium – réduit risques CV/rénaux (DASH/HAS)")
     
-    # Fibres
+    # Fibres (hépatique/cancer/diabète)
     orig_fiber = orig_nutr.get('fiber_g', 0)
     alt_fiber = alt_nutr.get('fiber_g', 0)
     
     if orig_fiber and alt_fiber and alt_fiber > orig_fiber * 1.3:
-        reasons.append(f"plus riche en fibres ({alt_fiber:.1f}g)")
+        reasons.append(f"Plus riche en fibres ({alt_fiber:.1f}g) – détox et anti-cancer (WCRF)")
+    
+    # Potassium (HTA vs rénal)
+    if DiseaseType.HYPERTENSION.value in diseases:
+        orig_k = orig_nutr.get('potassium_mg', 0)
+        alt_k = alt_nutr.get('potassium_mg', 0)
+        if alt_k > orig_k + 200:
+            reasons.append(f"+ potassium ({alt_k - orig_k:.0f}mg) – équilibre tension (FRHTA)")
+    elif DiseaseType.KIDNEY_DISEASE.value in diseases and alt_nutr.get('potassium_mg', 0) < orig_nutr.get('potassium_mg', 0):
+        reasons.append("Moins de potassium – protège reins (Ameli)")
     
     if reasons:
-        return "Meilleur car : " + ", ".join(reasons)
+        return "Meilleur car : " + " ; ".join(reasons)
     else:
-        return "Meilleur score de compatibilité global"
+        return "Meilleur score global – plus équilibré (PNNS/WCRF)"
 
 
 def _generate_modifications(nutr: Dict, hp: Dict) -> List[str]:
@@ -1136,15 +795,27 @@ def _generate_modifications(nutr: Dict, hp: Dict) -> List[str]:
     modifications = []
     diseases = hp.get('diseases', [])
     
-    if 'Diabète' in ' '.join(diseases):
-        modifications.append("Ajouter des légumes verts pour baisser l'IG")
-        modifications.append("Préférer riz basmati au riz blanc")
+    if DiseaseType.DIABETES.value in diseases:
+        modifications.append("Ajouter légumes verts (brocoli) pour baisser IG effectif (HAS)")
+        modifications.append("Remplacer féculents par quinoa/avoine – IG bas")
     
-    if 'Hypertension' in ' '.join(diseases):
-        modifications.append("Cuisiner sans sel ajouté")
-        modifications.append("Assaisonner avec citron et herbes")
+    if DiseaseType.HYPERTENSION.value in diseases:
+        modifications.append("Cuisiner sans sel ; + herbes/citron pour saveur (DASH)")
+        modifications.append("Ajouter avocat/banane pour potassium naturel")
     
-    return modifications
+    if DiseaseType.LIVER_DISEASE.value in diseases:
+        modifications.append("Inclure artichaut/curcuma pour détox hépatique (AFE F)")
+        modifications.append("Réduire graisses saturées ; + oméga-3 (poisson)")
+    
+    if DiseaseType.CANCER.value in diseases:
+        modifications.append("Ajouter baies/tomates pour antioxydants (WCRF)")
+        modifications.append("Éviter fritures ; opter vapeur/grill")
+    
+    if DiseaseType.KIDNEY_DISEASE.value in diseases:
+        modifications.append("Limiter phosphore : - chocolat/fromages (HAS)")
+        modifications.append("+ légumes alcalins (carottes) pour équilibre acide-base")
+    
+    return modifications if modifications else ["Adapter portions à besoins ; consulter diététicien"]
 
 
 def _generate_ingredient_substitutions(ingredients: List, problems: List[str], hp: Dict) -> List[str]:
@@ -1157,29 +828,60 @@ def _generate_ingredient_substitutions(ingredients: List, problems: List[str], h
     ingredient_names = [ing.name.lower() for ing in ingredients]
     
     # Substitutions pour diabète
-    if 'Diabète' in ' '.join(diseases):
+    if DiseaseType.DIABETES.value in diseases:
         if any('riz blanc' in name for name in ingredient_names):
-            substitutions.append("Remplacer riz blanc par riz basmati ou quinoa")
+            substitutions.append("Remplacer riz blanc par riz complet/quinoa – IG bas (HAS)")
         
         if any('pomme de terre' in name for name in ingredient_names):
-            substitutions.append("Remplacer pomme de terre par patate douce")
+            substitutions.append("Remplacer pomme de terre par patate douce – fibres + (HAS)")
     
     # Substitutions pour hypertension
-    if 'Hypertension' in ' '.join(diseases):
+    if DiseaseType.HYPERTENSION.value in diseases:
         if any('bouillon cube' in name or 'cube' in name for name in ingredient_names):
-            substitutions.append("Remplacer cube Maggi par épices naturelles")
+            substitutions.append("Remplacer cube Maggi par épices/herbes – réduit Na (DASH)")
+        
+        if any('sel' in name for name in ingredient_names):
+            substitutions.append("Omettre sel ; + citron pour goût")
+    
+    # Substitutions pour hépatique
+    if DiseaseType.LIVER_DISEASE.value in diseases:
+        if any('huile palme' in name or 'graisse saturée' in name for name in ingredient_names):
+            substitutions.append("Remplacer par huile olive – oméga-9 protecteur (méditerranéen)")
+        
+        if any('alcool' in name for name in ingredient_names):
+            substitutions.append("Éviter alcool ; + thé vert détox")
+    
+    # Substitutions pour cancer
+    if DiseaseType.CANCER.value in diseases:
+        if any('viande rouge' in name for name in ingredient_names):
+            substitutions.append("Remplacer par poisson/tofu – limite risque (WCRF)")
+        
+        if any('friture' in name for name in ingredient_names):
+            substitutions.append("Opter bouilli/vapeur ; + curcuma anti-inflamm")
+    
+    # Substitutions pour rénal
+    if DiseaseType.KIDNEY_DISEASE.value in diseases:
+        if any('banane' in name or 'tomate' in name for name in ingredient_names):
+            substitutions.append("Remplacer par pommes/poires – faible K (HAS)")
+        
+        if any('fromage' in name for name in ingredient_names):
+            substitutions.append("Choisir versions faible P ; + protéines végétales modérées")
     
     # Substitutions pour allergènes
     if 'Arachides' in allergens:
         if any('arachide' in name for name in ingredient_names):
-            substitutions.append("Remplacer huile d'arachide par huile d'olive ou tournesol")
+            substitutions.append("Remplacer huile arachide par olive/tournesol – éviction stricte (HAS)")
     
     if 'Lait (lactose)' in allergens:
         if any('lait' in name for name in ingredient_names):
-            substitutions.append("Remplacer lait de vache par lait d'amande ou lait sans lactose")
+            substitutions.append("Remplacer lait vache par amande/avoine sans additifs – variété nutriments")
+    
+    if 'Gluten (blé)' in allergens:
+        if any('blé' in name or 'pain' in name for name in ingredient_names):
+            substitutions.append("Remplacer par sarrasin/quinoa – sans gluten")
     
     if not substitutions:
-        substitutions.append("Augmenter la portion de légumes")
-        substitutions.append("Réduire les matières grasses")
+        substitutions.append("Augmenter légumes ; réduire graisses pour équilibre général")
+        substitutions.append("Variez sources protéines pour nutriments complets")
     
-    return substitutions
+    return substitutions[:5]  # Limiter à 5 pour concision

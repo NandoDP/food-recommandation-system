@@ -30,6 +30,7 @@ class DiseaseType(Enum):
 
 class AnalysisResponse(BaseModel):
     score: int = Field(..., ge=0, le=100)
+    name: str
     alert_level: AlertLevel
     allergen_alerts: List[Alert]
     disease_alerts: List[Alert]
@@ -54,6 +55,8 @@ class DishResponse(BaseModel):
     description: Optional[str]
     meal_type: Optional[str]
     cuisine_origin: Optional[str]
+    method: Optional[str]
+    ingredients: List[str]
     ingredient_count: int
 
 class FoodSearchResponse(BaseModel):

@@ -108,6 +108,25 @@ def add_disease(id: str, payload: DiseaseAdd, db: Session = Depends(db_instance.
     return {"message": "Disease added"}
 
 
+@router.post("/{id}/list_diseases")
+def add_list_diseases(id: str, payload: list[DiseaseAdd], db: Session = Depends(db_instance.get_db)):
+    profile = db.query(HealthProfile).filter(HealthProfile.id == id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Health profile not found")
+    
+    profile.diseases.clear()
+
+    for item in payload:
+        disease = db.query(Disease).filter(Disease.id == item.disease_id).first()
+        if not disease:
+            raise HTTPException(status_code=404, detail="Disease not found")
+
+        profile.diseases.append(disease)
+        db.commit()
+
+    return {"message": "Diseases added"}
+
+
 @router.post("/{id}/allergens")
 def add_allergen(id: str, payload: AllergenAdd, db: Session = Depends(db_instance.get_db)):
     profile = db.query(HealthProfile).filter(HealthProfile.id == id).first()
@@ -125,6 +144,24 @@ def add_allergen(id: str, payload: AllergenAdd, db: Session = Depends(db_instanc
     db.commit()
 
     return {"message": "Allergen added"}
+
+@router.post("/{id}/list_allergens")
+def add_list_allergens(id: str, payload: list[AllergenAdd], db: Session = Depends(db_instance.get_db)):
+    profile = db.query(HealthProfile).filter(HealthProfile.id == id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Health profile not found")
+
+    profile.allergens.clear()
+    
+    for item in payload:
+        allergen = db.query(Allergen).filter(Allergen.id == item.allergen_id).first()
+        if not allergen:
+            raise HTTPException(status_code=404, detail="Allergen not found")
+
+        profile.allergens.append(allergen)
+        db.commit()
+
+    return {"message": "Allergens added"}
 
 
 @router.delete("/{id}/diseases/{disease_id}")

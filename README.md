@@ -406,7 +406,7 @@ Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de 
 
 ## 👤 Auteur
 
-**Votre Nom**
+**Maodo DIOP**
 - Portfolio: [datascienceportfol.io/maododp](https://www.datascienceportfol.io/maododp)
 - LinkedIn: [linkedin.com/in/maodo-diop](https://linkedin.com/in/maodo-diop)
 - GitHub: [@NandoDP](https://github.com/NandoDP)

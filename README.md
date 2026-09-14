@@ -211,8 +211,19 @@ docker compose up --build
 | `db` | PostgreSQL 14 | `localhost:5432` |
 | `api` | API FastAPI | `localhost:8000` ([/docs](http://localhost:8000/docs)) |
 | `bot` | Bot Telegram (polling) | aucune |
+| `n8n` | Orchestration conversationnelle (migration v2) | `localhost:5678` |
 
 Pour lancer la stack sans le bot : `docker compose up --build db api`.
+
+Le service `n8n` amorce la migration décrite dans
+[`ARCHITECTURE_V2.md`](ARCHITECTURE_V2.md). Pendant la phase 1, il tourne en
+parallèle du bot Python, sur un second token Telegram de test. Sa mise en
+route (clés, webhook HTTPS, credentials, export des workflows) est décrite dans
+[`n8n/README.md`](n8n/README.md) :
+
+```bash
+docker compose up -d --build db api n8n   # éditeur sur http://localhost:5678
+```
 
 ### Variables d'Environnement
 
@@ -376,9 +387,15 @@ nutrisenegal/
 ├── requirements.txt              # Dépendances Python
 ├── .env.example                  # Template configuration
 ├── script.sql                    # Schéma SQL
+├── n8n/                          # Service d'orchestration (architecture v2)
+│   ├── workflows/                # Workflows exportés en JSON (versionnés)
+│   ├── init-n8n-db.sql           # Création de la base n8n
+│   └── README.md                 # Mise en route, webhook, credentials
+│
 ├── Dockerfile                    # Image API
 ├── Dockerfile.bot                # Image bot Telegram
-├── docker-compose.yml            # Stack db + api + bot
+├── Dockerfile.n8n                # Image n8n + ffmpeg
+├── docker-compose.yml            # Stack db + api + bot + n8n
 └── README.md                     # Cette documentation
 ```
 
@@ -408,6 +425,7 @@ nutrisenegal/
 
 <!-- - [`docs.md`](docs.md) : Documentation technique détaillée -->
 - [`ARCHITECTURE_V2.md`](ARCHITECTURE_V2.md) : Proposition de refonte (n8n, voix, wolof via Gemini)
+- [`n8n/README.md`](n8n/README.md) : Exploitation du service n8n (démarrage, webhook, workflows)
 - [`ER_Diagram.md`](ER_Diagram.md) : Schéma entité-relation
 - [`DATA_DICTIONARY.md`](DATA_DICTIONARY.md) : Dictionnaire de données
 - [`checklist_projet_nutrition.md`](checklist_projet_nutrition.md) : Checklist projet

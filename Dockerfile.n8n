@@ -1,0 +1,15 @@
+# Image n8n personnalisée pour NutriSénégal (ARCHITECTURE_V2.md §8).
+#
+# Ajout par rapport à l'image officielle : ffmpeg, nécessaire dès la phase 2
+# (voix) pour convertir le PCM 16 bits / 24 kHz / mono sorti par le TTS Gemini
+# en OGG/Opus, seul format accepté par `sendVoice` de l'API Telegram (§4.3) :
+#   ffmpeg -f s16le -ar 24000 -ac 1 -i in.pcm -c:a libopus out.ogg
+#
+# La version de n8n est épinglée volontairement : les workflows exportés dans
+# n8n/workflows/ dépendent de la version des nœuds. Monter de version est une
+# décision, pas un effet de bord du prochain `docker compose build`.
+FROM n8nio/n8n:2.39.5
+
+USER root
+RUN apk add --no-cache ffmpeg
+USER node

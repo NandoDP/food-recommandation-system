@@ -13,6 +13,11 @@ traite que de l'exploitation du service.
 | [`../Dockerfile.n8n`](../Dockerfile.n8n) | Image n8n 2.39.5 + `ffmpeg` (conversion PCM → OGG/Opus pour `sendVoice`, phase 2) |
 | [`init-n8n-db.sql`](init-n8n-db.sql) | Crée la base `n8n` dans le PostgreSQL du projet |
 | `workflows/` | Workflows exportés en JSON, un fichier par workflow |
+| [`../migrations/001_bot_tables.sql`](../migrations/001_bot_tables.sql) | Tables `bot_sessions`, `bot_processed_updates`, `bot_errors` |
+
+| Workflow | Fichier | État |
+|---|---|---|
+| WF1 `telegram-ingress` | [`workflows/wf1-telegram-ingress.json`](workflows/wf1-telegram-ingress.json) | Point d'entrée complet, branches terminales en attente de WF2/WF3/WF6/WF7 |
 
 ---
 
@@ -132,7 +137,91 @@ Changer une de ces valeurs demande `docker compose up -d --force-recreate n8n`.
 
 ---
 
-## 5. Versionner les workflows
+## 5. WF1 `telegram-ingress`
+
+Point d'entrée unique du bot (ARCHITECTURE_V2.md §5). Il normalise l'update
+Telegram, écarte les doublons, charge le profil et la session, puis route selon
+le type d'entrée. Les workflows d'aval n'existant pas encore, **chaque branche
+répond un message de diagnostic** : c'est ce qui rend WF1 testable seul.
+
+```
+Telegram Trigger
+  └─ Normaliser l'update        (Code : enveloppe plate, le format Telegram s'arrête ici)
+     └─ Marquer l'update        (Postgres : INSERT ... ON CONFLICT DO NOTHING)
+        └─ Update déjà traité ? ─ non ─▶ Doublon ignoré
+           └─ Charger le contexte   (crée/rafraîchit bot_sessions, puis users + health_profiles, 1 ligne garantie)
+              └─ Utilisateur connu ? ─ non ─▶ [WF6 onboarding]
+                 └─ Type d'entrée ─┬─ texte    ─▶ [WF3 nlu-router]
+                                   ├─ vocal    ─▶ [WF2 speech-asr]
+                                   ├─ callback ─▶ Accuser le callback ─▶ [WF7 profile]
+                                   └─ non géré
+                                      └──────────▶ Répondre  ([WF4 reply-composer])
+```
+
+L'enveloppe produite par le nœud `Normaliser l'update` est le contrat que tous
+les workflows suivants consomment : `kind` (`text` / `voice` / `callback` /
+`other`), `telegram_id`, `chat_id`, `message_id`, `text`, `file_id`,
+`duration`, `callback_data`, `callback_prefix`, `callback_query_id`, puis
+`user_id`, `language` et `session_state` après chargement du contexte.
+
+> Dans ce projet, l'identifiant Telegram **est** `users.id` (TEXT) : le bot
+> Python enregistre `str(update.effective_user.id)`. `bot_sessions.telegram_id`
+> suit la même convention.
+
+### Mise en route
+
+```bash
+# 1. Tables de support (idempotent)
+docker compose exec -T db psql -U nutrisenegal -d nutrisenegal_db   < migrations/001_bot_tables.sql
+
+# 2. Import du workflow
+docker compose exec n8n n8n import:workflow --separate --input=/workflows
+
+# 3. Redémarrer pour que l'éditeur voie le workflow importé
+docker compose restart n8n
+```
+
+Puis dans l'éditeur :
+
+1. Ouvrir **WF1 telegram-ingress** et vérifier que les trois nœuds Postgres et
+   les deux nœuds Telegram pointent bien sur les credentials créés au §3
+   (l'import les rattache par nom, mais il faut le confirmer).
+2. **Settings → Error Workflow → WF1 telegram-ingress** pour activer la branche
+   `Error Trigger` (§5.5 de l'architecture).
+3. Activer le workflow (bascule **Active**). C'est ce geste qui enregistre le
+   webhook auprès de Telegram : sans `PUBLIC_HTTPS_URL` valide, il échoue.
+
+### Recette
+
+| Envoi au bot de test | Réponse attendue |
+|---|---|
+| Un texte quelconque | Accusé listant `user_id`, `langue`, `session`, et le texte reçu |
+| Un message vocal | Accusé avec la durée et le `file_id`, mention de la phase 2 |
+| Une photo ou un sticker | « Ce type de message n'est pas encore géré » |
+| Depuis un compte sans profil | Message d'accueil renvoyant vers l'ancien bot |
+| Le même `update_id` rejoué | Aucune réponse, exécution arrêtée sur `Doublon ignoré` |
+| N'importe lequel des envois ci-dessus | Une ligne apparaît dans `bot_sessions` avec le `chat_id` |
+
+```sql
+-- Vérifications en base après quelques messages
+SELECT * FROM bot_processed_updates ORDER BY received_at DESC LIMIT 5;
+SELECT telegram_id, chat_id, state, updated_at FROM bot_sessions;
+SELECT occurred_at, node, message FROM bot_errors ORDER BY occurred_at DESC LIMIT 5;
+```
+
+Le nœud *Charger le contexte* crée la session au passage (`INSERT ... ON
+CONFLICT DO UPDATE` dans une CTE) : `bot_sessions` est donc alimentée dès le
+premier message, avant même l'inscription de l'utilisateur, ce dont WF6
+onboarding aura besoin.
+
+> **Prérequis** : la table `users` doit exister. `script.sql` la déclare avec
+> `CREATE OR REPLACE TABLE`, syntaxe que PostgreSQL refuse — si la base a été
+> initialisée uniquement par ce script, le nœud *Charger le contexte* échouera
+> sur `relation "users" does not exist`.
+
+---
+
+## 6. Versionner les workflows
 
 Le dossier `workflows/` est monté sur `/workflows` dans le conteneur. Exporter
 après chaque modification, et commiter :
@@ -151,7 +240,7 @@ Un export contient les nœuds et leurs paramètres, mais seulement les
 
 ---
 
-## 6. Dépannage
+## 7. Dépannage
 
 | Symptôme | Cause probable |
 |---|---|
@@ -160,3 +249,5 @@ Un export contient les nœuds et leurs paramètres, mais seulement les
 | Telegram ne déclenche rien | `PUBLIC_HTTPS_URL` périmée, ou workflow inactif : vérifier `getWebhookInfo` (§2) |
 | `$env.X` vide dans un nœud | Variable absente du service `n8n` du compose, ou conteneur non recréé |
 | Credentials illisibles après une remise à zéro | `N8N_ENCRYPTION_KEY` a changé : restaurer l'ancienne valeur ou recréer les credentials |
+| WF1 : `relation "bot_processed_updates" does not exist` | Migration `001_bot_tables.sql` non appliquée (§5) |
+| WF1 : le bouton Telegram tourne indéfiniment | Le nœud *Accuser le callback* n'a pas été exécuté : vérifier la branche `callback` du Switch |

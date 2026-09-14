@@ -387,6 +387,8 @@ nutrisenegal/
 ├── requirements.txt              # Dépendances Python
 ├── .env.example                  # Template configuration
 ├── script.sql                    # Schéma SQL
+├── migrations/                   # Migrations SQL incrémentales (architecture v2)
+│
 ├── n8n/                          # Service d'orchestration (architecture v2)
 │   ├── workflows/                # Workflows exportés en JSON (versionnés)
 │   ├── init-n8n-db.sql           # Création de la base n8n

@@ -4,7 +4,7 @@
   "active": false,
   "nodes": [
     {
-      "id": "3ffd5ea2-4bee-4635-b659-18eb2157c861",
+      "id": "3471f6de-b1ef-4564-ad6f-ef2a36518790",
       "name": "Telegram Trigger",
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1.5,
@@ -25,11 +25,11 @@
           "name": "Telegram NutriSénégal (test)"
         }
       },
-      "webhookId": "b23ac918-5ddc-411a-8a2c-a515c63c01a7",
+      "webhookId": "148c5a87-559c-4c62-8dbc-ebb099a99659",
       "notes": "Webhook HTTPS : PUBLIC_HTTPS_URL doit pointer sur n8n (n8n/README.md §2)"
     },
     {
-      "id": "fc8933a2-e088-4c18-832e-08cab36069cc",
+      "id": "01a127f5-107b-4516-af39-c67955be5aff",
       "name": "Normaliser l’update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -43,7 +43,7 @@
       }
     },
     {
-      "id": "81ad32c2-4941-430d-bea9-98db0d588f57",
+      "id": "00f539e4-880f-401c-9af3-e6a4443f983e",
       "name": "Marquer l’update",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
@@ -67,7 +67,7 @@
       "notes": "Telegram rejoue les updates non acquittes : sans ce garde-fou une analyse (et sa facturation LLM) serait relancee."
     },
     {
-      "id": "88decebf-232f-4efd-b515-5bb7c608ffc7",
+      "id": "22697b17-ec1d-45ef-bb77-473f6c7208ad",
       "name": "Recoller l’enveloppe",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -81,7 +81,7 @@
       }
     },
     {
-      "id": "547c780d-0f50-4d77-920b-35fb8a7daa2e",
+      "id": "71146dc4-b674-4d23-8136-05772a3d81b3",
       "name": "Update déjà traité ?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -99,7 +99,7 @@
           },
           "conditions": [
             {
-              "id": "dc1bdc38-4604-4d98-b4d1-f0b6108c3a8e",
+              "id": "d014dc55-1e42-4421-9674-02b31ad031b5",
               "leftValue": "={{ $json.is_new }}",
               "rightValue": "",
               "operator": {
@@ -115,7 +115,7 @@
       }
     },
     {
-      "id": "563d994a-f967-4635-8269-30440e13cac2",
+      "id": "917cd8a0-ee03-403a-b7d5-73337b9ed969",
       "name": "Doublon ignoré",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
@@ -126,7 +126,7 @@
       "parameters": {}
     },
     {
-      "id": "ee82e358-5c7e-4fd1-be70-8ad538dae03f",
+      "id": "6d3c0738-81b7-47b5-b55b-b9d2efb1af3f",
       "name": "Charger le contexte",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
@@ -150,7 +150,7 @@
       "notes": "Renvoie toujours une ligne : NULL sur les colonnes users/health_profiles si l'utilisateur est inconnu."
     },
     {
-      "id": "eaa41b5c-44bb-4856-8d37-bec9142d4c04",
+      "id": "08643511-9c2b-4445-9401-9c7a65dd952e",
       "name": "Fusionner le contexte",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -164,7 +164,7 @@
       }
     },
     {
-      "id": "d5776c70-b0ae-4357-aea6-305b78fe6473",
+      "id": "41e0dc6b-87e4-48fe-b042-bb1f527d5e71",
       "name": "Utilisateur connu ?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -182,7 +182,7 @@
           },
           "conditions": [
             {
-              "id": "5e2f9682-f538-4b20-b034-f045b3efd307",
+              "id": "6f40999c-4198-4f81-a6e1-9c791d41df40",
               "leftValue": "={{ $json.is_known_user }}",
               "rightValue": "",
               "operator": {
@@ -198,7 +198,7 @@
       }
     },
     {
-      "id": "e0315571-e7eb-4c00-80f4-1995969c5593",
+      "id": "bf63317d-9b98-4d3b-8b30-c3d6c298a712",
       "name": "Type d’entrée",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
@@ -219,7 +219,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "c5fce69f-bcfb-4261-9ec0-0b8f54762ba4",
+                    "id": "00bd0345-c36d-4d37-b82b-e8cf10c1b224",
                     "leftValue": "={{ $json.kind }}",
                     "rightValue": "text",
                     "operator": {
@@ -243,7 +243,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "6882521f-1e4a-4c7f-8933-92389390f84d",
+                    "id": "674a9349-deff-4306-8ce5-7fec35d88ef3",
                     "leftValue": "={{ $json.kind }}",
                     "rightValue": "voice",
                     "operator": {
@@ -267,7 +267,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "bee2db36-1da3-41f6-911e-6aa7e071ead2",
+                    "id": "8a2fae48-ec55-4c10-96b1-3fede6e05634",
                     "leftValue": "={{ $json.kind }}",
                     "rightValue": "callback",
                     "operator": {
@@ -290,7 +290,7 @@
       }
     },
     {
-      "id": "3f6a3828-ed73-4b1e-acad-144149462bb1",
+      "id": "66ded9e6-bf62-433f-9a29-758f9d8ce4db",
       "name": "Texte : WF3 à brancher",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -304,7 +304,7 @@
         "assignments": {
           "assignments": [
             {
-              "id": "06801638-f7e9-47a7-95c8-f6e0b07f7571",
+              "id": "57b6c9ae-b120-4c8e-ad27-34a5ef98b83a",
               "name": "reply_text",
               "value": "=✅ Texte reçu, l’enveloppe WF1 est correcte.\n\n• utilisateur : {{ $json.user_first_name || 'inconnu' }} ({{ $json.user_id }})\n• langue : {{ $json.language }}\n• session : {{ $json.session_state }}\n• texte : {{ $json.text }}\n\nWF3 nlu-router n’est pas encore branché.",
               "type": "string"
@@ -315,7 +315,7 @@
       }
     },
     {
-      "id": "728e73f3-48ce-4c31-849c-41d03a557389",
+      "id": "3fe32f21-516f-4453-846f-7695705cbb01",
       "name": "Vocal : WF2 à brancher",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -329,7 +329,7 @@
         "assignments": {
           "assignments": [
             {
-              "id": "1fe479a0-f220-4f76-bd62-2d67acf4d26b",
+              "id": "a958e065-165a-4331-99fb-d1d73e855071",
               "name": "reply_text",
               "value": "=🎧 Vocal reçu ({{ $json.duration }} s), file_id {{ $json.file_id }}.\n\nLa transcription (WF2 speech-asr) arrive en phase 2 de la migration.",
               "type": "string"
@@ -340,7 +340,7 @@
       }
     },
     {
-      "id": "7c98fffd-ddb9-4924-991d-738d482e4f1f",
+      "id": "73ac7897-d535-43e6-9ffa-7fb234ad4c6a",
       "name": "Accuser le callback",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
@@ -363,7 +363,7 @@
       "notes": "Sans reponse a la callback query, le bouton reste en chargement cote Telegram."
     },
     {
-      "id": "c7b1ee28-1b95-4cc3-8337-bfe77a509797",
+      "id": "f26336d1-2593-4e0f-9633-e382cab5802b",
       "name": "Callback : WF7 à brancher",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -377,7 +377,7 @@
         "assignments": {
           "assignments": [
             {
-              "id": "f80b0710-4d06-451f-a009-c71f50531f1a",
+              "id": "92b995ab-8663-47e2-8b9c-4ce8b81b3429",
               "name": "reply_text",
               "value": "=🔘 Bouton « {{ $json.callback_data }} » (préfixe {{ $json.callback_prefix }}).\n\nLe routage vers WF7 profile-management n’est pas encore branché.",
               "type": "string"
@@ -388,7 +388,7 @@
       }
     },
     {
-      "id": "43235446-a95b-4530-be82-bea8b1e9b2d9",
+      "id": "060a369c-3af4-4a4e-acaa-0a6941b621e4",
       "name": "Type non géré",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -402,7 +402,7 @@
         "assignments": {
           "assignments": [
             {
-              "id": "4c85fa4c-9ff3-44f8-b864-3bc5859975c5",
+              "id": "9cb6dccc-d699-4fc6-bde1-40e80528b7ad",
               "name": "reply_text",
               "value": "=Ce type de message n’est pas encore géré (photo, sticker, document…).\nEnvoie-moi du texte pour l’instant.",
               "type": "string"
@@ -413,32 +413,29 @@
       }
     },
     {
-      "id": "36e0b2ad-d45e-421b-9056-004ac4ec4fc1",
-      "name": "Onboarding : WF6 à brancher",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
+      "id": "526eec47-1b83-4311-9ea9-bccaeaaaa8cd",
+      "name": "WF6 onboarding",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
       "position": [
         1300,
         320
       ],
       "parameters": {
-        "mode": "manual",
-        "includeOtherFields": true,
-        "assignments": {
-          "assignments": [
-            {
-              "id": "dec91f3d-aa4d-4f33-ae38-b66f441369c5",
-              "name": "reply_text",
-              "value": "=👋 Bonjour {{ $json.telegram_first_name }} !\n\nAucun profil n’est associé à ce compte ({{ $json.telegram_id }}).\nWF6 onboarding n’est pas encore branché : utilise le bot actuel pour créer ton profil.",
-              "type": "string"
-            }
-          ]
+        "workflowId": {
+          "__rl": true,
+          "value": "wf6-onboarding",
+          "mode": "list",
+          "cachedResultName": "WF6 onboarding"
         },
-        "options": {}
-      }
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "notes": "WF6 répond lui-même à l'utilisateur : cette branche ne passe pas par le nœud Répondre."
     },
     {
-      "id": "727cc125-b7ed-48e5-9ba2-016db5361d77",
+      "id": "a956bc59-df03-45f6-a2ba-a1373f4c2186",
       "name": "Répondre",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
@@ -464,7 +461,7 @@
       "notes": "Sortie provisoire : remplacee par WF4 reply-composer quand il existera."
     },
     {
-      "id": "c4fb6b09-8072-43a5-b56d-d4e2ee9abf3a",
+      "id": "56c7728a-2dd4-4966-8239-b0cca8c5c8eb",
       "name": "Error Trigger",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
@@ -475,7 +472,7 @@
       "parameters": {}
     },
     {
-      "id": "23177d5c-14a1-43ca-a1e5-712d7961b149",
+      "id": "7ecdf351-9506-40b3-a62c-86a3ab81f3b4",
       "name": "Journaliser l’erreur",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
@@ -498,7 +495,7 @@
       }
     },
     {
-      "id": "3b4e8d91-8141-4cb3-b2c7-7ca058f6561d",
+      "id": "d726f6ae-8adf-4c79-9789-b4fb3a740de5",
       "name": "Note ingress",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -514,7 +511,7 @@
       }
     },
     {
-      "id": "097a2b85-8fcf-48c0-978d-c35eccd2eb1b",
+      "id": "6648169a-5a2f-4742-b264-432fbb76fbf1",
       "name": "Note branches",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -525,12 +522,12 @@
       "parameters": {
         "width": 960,
         "height": 170,
-        "content": "## Branches en attente\nChaque sortie répond un message de diagnostic.\nÀ mesure que les workflows arrivent, remplacer le nœud Set par un **Execute Sub-workflow** : texte → WF3, vocal → WF2, callback → WF7, utilisateur inconnu → WF6. Le nœud *Répondre* cédera la place à WF4.",
+        "content": "## Branches\nUtilisateur inconnu → **WF6 onboarding**, qui répond lui-même à l’utilisateur.\nLes trois autres sorties répondent encore un message de diagnostic : à mesure que les workflows arrivent, remplacer le nœud Set par un **Execute Sub-workflow** — texte → WF3, vocal → WF2, callback → WF7. Le nœud *Répondre* cédera la place à WF4.",
         "color": 3
       }
     },
     {
-      "id": "c3ee798d-377c-4c40-896e-101638476f8e",
+      "id": "8dad3cf7-b3ff-4c83-a8cc-c8e4d3a14447",
       "name": "Note erreurs",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -642,7 +639,7 @@
         ],
         [
           {
-            "node": "Onboarding : WF6 à brancher",
+            "node": "WF6 onboarding",
             "type": "main",
             "index": 0
           }
@@ -726,17 +723,6 @@
       ]
     },
     "Type non géré": {
-      "main": [
-        [
-          {
-            "node": "Répondre",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Onboarding : WF6 à brancher": {
       "main": [
         [
           {

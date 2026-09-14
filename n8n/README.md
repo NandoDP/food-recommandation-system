@@ -14,10 +14,12 @@ traite que de l'exploitation du service.
 | [`init-n8n-db.sql`](init-n8n-db.sql) | Crée la base `n8n` dans le PostgreSQL du projet |
 | `workflows/` | Workflows exportés en JSON, un fichier par workflow |
 | [`../migrations/001_bot_tables.sql`](../migrations/001_bot_tables.sql) | Tables `bot_sessions`, `bot_processed_updates`, `bot_errors` |
+| [`../migrations/002_users_language_wolof.sql`](../migrations/002_users_language_wolof.sql) | Autorise `wo` dans `users.language` (onboarding trilingue) |
 
 | Workflow | Fichier | État |
 |---|---|---|
-| WF1 `telegram-ingress` | [`workflows/wf1-telegram-ingress.json`](workflows/wf1-telegram-ingress.json) | Point d'entrée complet, branches terminales en attente de WF2/WF3/WF6/WF7 |
+| WF1 `telegram-ingress` | [`workflows/wf1-telegram-ingress.json`](workflows/wf1-telegram-ingress.json) | Point d'entrée complet ; appelle WF6, branches texte/vocal/callback en attente de WF3/WF2/WF7 |
+| WF6 `onboarding` | [`workflows/wf6-onboarding.json`](workflows/wf6-onboarding.json) | Création de profil de bout en bout |
 
 ---
 
@@ -231,7 +233,90 @@ onboarding aura besoin.
 
 ---
 
-## 6. Versionner les workflows
+## 6. WF6 `onboarding`
+
+Remplace le `ConversationHandler` du bot Python. Appelé par WF1 dès qu'un
+message arrive d'un compte sans profil, il mène la conversation jusqu'à la
+création du profil santé :
+
+```
+IDLE → ASK_LANGUAGE → ASK_NAME → ASK_WEIGHT → ASK_DISEASES → ASK_ALLERGENS → DONE
+```
+
+L'état ne vit pas en mémoire mais dans `bot_sessions.state` et `.draft` : n8n
+peut redémarrer au milieu d'un onboarding sans que l'utilisateur perde sa
+progression. Les listes de maladies et d'allergènes sont lues sur
+`/api/health-profiles/diseases` et `/allergens` — les UUID codés en dur de
+`keyboads.py` disparaissent.
+
+Trois choix de construction :
+
+- **Toute la décision tient dans un nœud Code**, `Machine à états` : fonction
+  pure, elle ne lit ni n'écrit rien, elle renvoie l'état suivant, le brouillon
+  et le message Telegram à émettre. Les nœuds qui suivent exécutent. C'est ce
+  qui rend l'enchaînement rejouable hors n8n et testable sans Telegram.
+- **Les appels Telegram passent par des nœuds HTTP Request**, pas par le nœud
+  Telegram : les claviers sont construits à partir des listes de l'API, et le
+  nœud Telegram ne sait pas produire un clavier dynamique. Le token vient de
+  `$env.TELEGRAM_TOKEN_N8N`.
+- **La finalisation tolère le rejeu** : `register` et la création du profil
+  acceptent un 400 « existe déjà », l'identifiant de profil est relu plutôt que
+  déduit de la réponse de création, et `list_diseases` / `list_allergens`
+  remplacent la sélection entière. Un utilisateur qui relance `/start` puis
+  retermine ne crée pas de doublon.
+
+> Le token apparaît dans l'URL des appels, donc dans les données d'exécution
+> conservées par n8n. C'est acceptable pour le bot de test ; à revoir avant
+> d'utiliser le token de production.
+
+### Mise en route
+
+```bash
+# La langue wolof doit être acceptée par la base, sinon le choix « Wolof »
+# fait échouer POST /api/users/register
+docker compose exec -T db psql -U nutrisenegal -d nutrisenegal_db   < migrations/002_users_language_wolof.sql
+
+docker compose exec -T n8n n8n import:workflow --separate --input=/workflows/
+docker compose restart n8n
+```
+
+WF6 est un sous-workflow : **il n'a pas à être activé**, WF1 l'appelle. En
+revanche l'import **désactive** les workflows importés, WF1 compris — il faut
+le republier et redémarrer, sinon le webhook Telegram n'est plus enregistré :
+
+```bash
+docker compose exec -T n8n n8n publish:workflow --id=wf1-telegram-ingress
+docker compose restart n8n
+curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
+```
+
+### Recette
+
+| Envoi au bot de test, depuis un compte sans profil | Réponse attendue |
+|---|---|
+| `/start` | Message d'accueil et trois boutons de langue |
+| Bouton « Français » | Le message est **édité** (pas de nouveau message) et demande le nom |
+| Un prénom, ou le bouton « Utiliser … » | Demande le poids |
+| `abc` puis `800` | Deux refus, la question du poids reste posée |
+| `72,4` | Clavier des 5 maladies, avec « Aucune » et « Valider » |
+| Cocher / décocher | Le clavier se met à jour, la case bascule |
+| Valider | Clavier des allergènes |
+| Terminer | Récapitulatif, et le profil existe en base |
+
+```sql
+SELECT state, draft FROM bot_sessions WHERE telegram_id = '<ton id>';
+SELECT id, first_name, weight, language FROM users;
+SELECT hp.id, array_agg(d.name) FROM health_profiles hp
+  LEFT JOIN health_profile_diseases hpd ON hpd.health_profile_id = hp.id
+  LEFT JOIN diseases d ON d.id = hpd.disease_id GROUP BY hp.id;
+```
+
+Une fois le profil créé, `is_known_user` devient vrai dans WF1 : les messages
+suivants ne passent plus par WF6 mais par le routage texte / vocal / callback.
+
+---
+
+## 7. Versionner les workflows
 
 Le dossier `workflows/` est monté sur `/workflows` dans le conteneur. Exporter
 après chaque modification, et commiter :
@@ -250,7 +335,7 @@ Un export contient les nœuds et leurs paramètres, mais seulement les
 
 ---
 
-## 7. Dépannage
+## 8. Dépannage
 
 | Symptôme | Cause probable |
 |---|---|
@@ -264,4 +349,6 @@ Un export contient les nœuds et leurs paramètres, mais seulement les
 | `Postgres <version> is not supported` au démarrage | n8n 2.x demande PostgreSQL 16 ou plus ; le compose est en 17 |
 | `password authentication failed for user "nutrisenegal"` | `DB_PASSWORD` a été modifié dans `.env` **après** la création du volume : `POSTGRES_PASSWORD` n'agit qu'à l'initialisation, le rôle garde l'ancien mot de passe. Réaligner sans perdre les données : `docker compose exec -T db psql -U nutrisenegal -d nutrisenegal_db -c "ALTER USER nutrisenegal WITH PASSWORD '<nouveau>';"` puis `docker compose up -d --force-recreate db api n8n` |
 | `Credential not configured` à la publication | Workflow importé avant la création des credentials : créer ceux du §3 avec les noms exacts, puis réimporter |
+| Le bot ne répond plus après un import | L'import désactive les workflows : republier WF1 et redémarrer n8n (§6) |
+| WF6 : `violates check constraint "users_language_check"` | Migration `002_users_language_wolof.sql` non appliquée |
 | WF1 : le bouton Telegram tourne indéfiniment | Le nœud *Accuser le callback* n'a pas été exécuté : vérifier la branche `callback` du Switch |

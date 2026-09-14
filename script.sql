@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS users (
     weight bigint, 
     height bigint,
     registration_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    language TEXT NOT NULL DEFAULT 'fr' CHECK (language IN ('en', 'fr'))
+    -- 'wo' ajouté par migrations/002 : l'onboarding du bot est trilingue
+    language TEXT NOT NULL DEFAULT 'fr' CHECK (language IN ('en', 'fr', 'wo'))
 );
 
 CREATE TABLE IF NOT EXISTS diseases (

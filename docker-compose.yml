@@ -9,7 +9,9 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
       POSTGRES_DB: nutrisenegal_db
     ports:
-      - "5432:5432"
+      # 5433 côté hôte : un PostgreSQL Windows natif occupe déjà 5432 et
+      # intercepte les connexions. Les autres conteneurs passent par `db:5432`.
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./script.sql:/docker-entrypoint-initdb.d/init.sql

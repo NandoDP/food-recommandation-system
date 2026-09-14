@@ -208,12 +208,19 @@ docker compose up --build
 
 | Service | Rôle | Exposition |
 |---------|------|-----------|
-| `db` | PostgreSQL 17 | `localhost:5432` |
+| `db` | PostgreSQL 17 | `localhost:5433` (voir note) |
 | `api` | API FastAPI | `localhost:8000` ([/docs](http://localhost:8000/docs)) |
 | `bot` | Bot Telegram (polling) | aucune |
 | `n8n` | Orchestration conversationnelle (migration v2) | `localhost:5678` |
 
 Pour lancer la stack sans le bot : `docker compose up --build db api`.
+
+> **Port 5433 et non 5432.** Un PostgreSQL Windows natif occupe fréquemment
+> 5432 et intercepte les connexions de l'hôte, y compris celles destinées au
+> conteneur : les scripts échouaient alors sur une authentification refusée,
+> avec un message illisible (libpq répond dans la langue du système, psycopg2
+> le décode en UTF-8). Les conteneurs entre eux continuent d'utiliser
+> `db:5432`, seul l'accès depuis la machine change.
 
 Le service `n8n` amorce la migration décrite dans
 [`ARCHITECTURE_V2.md`](ARCHITECTURE_V2.md). Pendant la phase 1, il tourne en
@@ -388,6 +395,7 @@ nutrisenegal/
 ├── .env.example                  # Template configuration
 ├── script.sql                    # Schéma SQL
 ├── migrations/                   # Migrations SQL incrémentales (architecture v2)
+│   └── copie_referentiel.py      # Copie foods/ingredients/dishes d'une base à l'autre
 │
 ├── n8n/                          # Service d'orchestration (architecture v2)
 │   ├── workflows/                # Workflows exportés en JSON (versionnés)

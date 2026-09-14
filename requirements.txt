@@ -38,6 +38,7 @@ spacy==3.7.5
 matplotlib==3.8.2
 seaborn==0.13.1
 pandas==2.1.4
+openpyxl==3.1.2          # lecture de data/WAFCT_2019.xlsx par pandas
 
 # Jupyter support
 jupyter==1.0.0

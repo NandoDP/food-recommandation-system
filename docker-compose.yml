@@ -1,7 +1,8 @@
 services:
   # PostgreSQL Database
   db:
-    image: postgres:14-alpine
+    # n8n 2.x exige PostgreSQL 16 minimum (17 recommandé) pour sa propre base
+    image: postgres:17-alpine
     container_name: nutrisenegal-db
     environment:
       POSTGRES_USER: nutrisenegal

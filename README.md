@@ -153,7 +153,7 @@ Voir [`ER_Diagram.md`](ER_Diagram.md) et [`DATA_DICTIONARY.md`](DATA_DICTIONARY.
 
 ```bash
 Python 3.12+
-PostgreSQL 14+
+PostgreSQL 16+ (17 dans le compose : n8n 2.x n'accepte pas moins de 16)
 Telegram Bot Token (pour interface bot)
 ```
 
@@ -208,7 +208,7 @@ docker compose up --build
 
 | Service | Rôle | Exposition |
 |---------|------|-----------|
-| `db` | PostgreSQL 14 | `localhost:5432` |
+| `db` | PostgreSQL 17 | `localhost:5432` |
 | `api` | API FastAPI | `localhost:8000` ([/docs](http://localhost:8000/docs)) |
 | `bot` | Bot Telegram (polling) | aucune |
 | `n8n` | Orchestration conversationnelle (migration v2) | `localhost:5678` |

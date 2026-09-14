@@ -256,5 +256,5 @@ Un export contient les nœuds et leurs paramètres, mais seulement les
 | Credentials illisibles après une remise à zéro | `N8N_ENCRYPTION_KEY` a changé : restaurer l'ancienne valeur ou recréer les credentials |
 | WF1 : `relation "bot_processed_updates" does not exist` | Migration `001_bot_tables.sql` non appliquée (§5) |
 | `Importing 0 workflows` | Chemin réécrit par Git Bash : voir l'encadré du §5 |
-| `Postgres 14 is not supported` au démarrage | n8n 2.x demande PostgreSQL 16 ou plus ; l'instance fonctionne mais n'est pas supportée |
+| `Postgres <version> is not supported` au démarrage | n8n 2.x demande PostgreSQL 16 ou plus ; le compose est en 17 |
 | WF1 : le bouton Telegram tourne indéfiniment | Le nœud *Accuser le callback* n'a pas été exécuté : vérifier la branche `callback` du Switch |

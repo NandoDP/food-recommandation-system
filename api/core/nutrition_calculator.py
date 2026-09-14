@@ -103,18 +103,24 @@ def _convert_to_grams(quantity: float, unit: str, food) -> float:
 
     unit = unit.strip().lower()
 
+    # `density` n'existe pas dans la table foods : getattr évite l'AttributeError
+    # et laisse la porte ouverte si la colonne est ajoutée un jour.
+    density = getattr(food, "density", None) or 1.0  # g/ml
+
     # Unités directes
-    if unit in ["kg", "kilo", "kilogramme"]:
+    if unit in ["kg", "kilo", "kilogramme", "kilogrammes"]:
         return quantity * 1000
     if unit in ["g", "gramme", "grammes"]:
         return quantity
     if unit in ["l", "litre", "litres"]:
-        density = food.density or 1.0  # g/ml (à remplir dans foods si possible)
         return quantity * 1000 * density
-    if unit in ["cl", "centilitre"]:
-        density = food.density or 1.0
+    if unit in ["cl", "centilitre", "centilitres"]:
         return quantity * 10 * density
-    if unit in ["mg", "milligramme"]:
+    # Sans le millilitre, « 30 ml d'huile » tombait dans le fallback `x 100`
+    # et pesait 3 kg — l'unité la plus courante pour l'huile et le lait.
+    if unit in ["ml", "millilitre", "millilitres", "cc"]:
+        return quantity * density
+    if unit in ["mg", "milligramme", "milligrammes"]:
         return quantity / 1000
 
     # Cuillères (très fréquent dans recettes africaines)
@@ -133,7 +139,10 @@ def _convert_to_grams(quantity: float, unit: str, food) -> float:
     if unit in ["gousse", "branche", "feuille"]:
         return quantity * 5   # estimation conservatrice
 
-    return quantity * 100  # fallback par défaut (ex: "2 oignons" → 2 x 100g)
+    # Fallback : l'unité est alors un décompte d'objets ("2 oignons"), pas une
+    # mesure. Toute unité de mesure réelle doit être listée au-dessus, sinon
+    # elle est multipliée par 100 en silence.
+    return quantity * 100
 
 
 def _estimate_weight_fallback(raw_text: str, food, unit: str) -> float:

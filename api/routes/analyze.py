@@ -10,8 +10,10 @@ from api.core.database import Database
 from api.core.nutrition_engine import NutritionEngine
 from api.core.menu_parser import WestAfricanMenuParser
 from api.core.nutrition_calculator import calculate_dish_nutrition_from_items
+from api.core import ingredient_resolver
 from api.models.analyze import (
     DishAnalysisRequest, MenuAnalysisRequest,
+    IngredientsAnalysisRequest, IngredientsAnalysisResponse,
     AnalysisResponse, DishResponse, FoodSearchResponse,
     RecommendationsResponse, RecommendedDish,
     AlternativesResponse, AlertLevel, AlternativeDish, DiseaseType
@@ -91,6 +93,53 @@ def calculate_dish_nutrition(dish_id: str, db: Session) -> Dict:
     
     return nutritional_summary
 
+def resoudre_profil_sante(payload, db: Session) -> Dict:
+    """Profil santé à appliquer : celui fourni, celui de l'utilisateur, ou vide.
+
+    Les trois routes d'analyse suivent la même règle ; la factoriser évite
+    qu'elles divergent sur le poids par défaut ou les clés attendues.
+    """
+    if getattr(payload, 'health_profile', None):
+        return payload.health_profile
+
+    if getattr(payload, 'user_id', None):
+        profile = get_user_health_profile(payload.user_id, db)
+        return {
+            'diseases': profile.get('diseases', []),
+            'allergens': profile.get('allergens', []),
+            'weight': profile.get('weight', 70)
+        }
+
+    return {'diseases': [], 'allergens': [], 'weight': 70}
+
+
+def analyser_items(nom_plat: str, items: List[Dict], health_profile: Dict,
+                   db: Session, portion_size_g: float = 500) -> Dict:
+    """Cœur partagé par /analyze-menu et /analyze-ingredients.
+
+    Les items ont la forme produite par le parser comme par le résolveur :
+    {ingredient_id, quantity, unit, raw_text, confidence}. Le moteur de règles
+    est le seul à décider du score et des alertes.
+    """
+    from api.schemas.analyze import Ingredient
+
+    noms = []
+    for item in items:
+        ingredient = db.query(Ingredient).get(item['ingredient_id'])
+        if ingredient:
+            noms.append({'name': ingredient.name})
+
+    dish_data = {
+        'name': nom_plat,
+        'ingredients': noms,
+        'nutritional_summary': calculate_dish_nutrition_from_items(
+            items, db, portion_size_g=portion_size_g
+        )
+    }
+
+    return NutritionEngine().analyze(dish_data, health_profile)
+
+
 # ==================== ENDPOINTS ====================
 
 @router.post("/analyze-dish", response_model=AnalysisResponse)
@@ -125,17 +174,7 @@ def analyze_dish(payload: DishAnalysisRequest, db: Session = Depends(db_instance
     nutritional_summary = calculate_dish_nutrition(payload.dish_id, db)
     
     # 4. Récupérer profil santé
-    if payload.health_profile:
-        health_profile = payload.health_profile
-    elif payload.user_id:
-        profile = get_user_health_profile(payload.user_id, db)
-        health_profile = {
-            'diseases': profile.get('diseases', []),
-            'allergens': profile.get('allergens', []),
-            'weight': profile.get('weight', 70)
-        }
-    else:
-        health_profile = {'diseases': [], 'allergens': [], 'weight': 70}
+    health_profile = resoudre_profil_sante(payload, db)
     
     # 5. Analyse avec moteur de règles
     dish_data = {
@@ -168,38 +207,61 @@ def analyze_menu(payload: MenuAnalysisRequest, db: Session = Depends(db_instance
     
     from api.schemas.analyze import Ingredient
     
-    menu_text = payload.menu_text.lower()
-    
-    # Récupérer profil santé
-    if payload.health_profile:
-        health_profile = payload.health_profile
-    elif payload.user_id:
-        profile = get_user_health_profile(payload.user_id, db)
-        health_profile = {
-            'diseases': profile.get('diseases', []),
-            'allergens': profile.get('allergens', []),
-            'weight': profile.get('weight', 70)
-        }
-    else:
-        health_profile = {'diseases': [], 'allergens': [], 'weight': 70}
-    
+    health_profile = resoudre_profil_sante(payload, db)
+
     parser = WestAfricanMenuParser(db_instance.get_db())
-    items = parser.parse_menu_text(menu_text)
-    
-    # Conversion en dish_ingredients (prêt pour NutritionEngine)
-    dish_data = {
-        "name": "Menu détecté",
-        "ingredients": [
-            {"name": db.query(Ingredient).get(it["ingredient_id"]).name}
-            for it in items
-        ],
-        "nutritional_summary": calculate_dish_nutrition_from_items(items, db, portion_size_g=500)
-    }
-    
-    engine = NutritionEngine()
-    analysis = engine.analyze(dish_data, health_profile)
-    
-    return AnalysisResponse(**analysis)
+    items = parser.parse_menu_text(payload.menu_text.lower())
+
+    return AnalysisResponse(**analyser_items("Menu détecté", items, health_profile, db))
+
+
+@router.post("/analyze-ingredients", response_model=IngredientsAnalysisResponse)
+def analyze_ingredients(payload: IngredientsAnalysisRequest,
+                        db: Session = Depends(db_instance.get_db)):
+    """
+    Analyse un plat décrit par ses ingrédients déjà extraits.
+
+    Entrée destinée au LLM d'extraction (WF3 nlu-router) : les noms arrivent
+    normalisés en français, il n'y a plus de phrase à analyser. spaCy n'est pas
+    sollicité — /analyze-menu reste le chemin pour le texte libre et le repli
+    hors ligne.
+
+    Les ingrédients non reconnus sont renvoyés tels quels dans
+    `unmatched_ingredients` : c'est au bot de demander confirmation plutôt que
+    de laisser passer une analyse incomplète (ARCHITECTURE_V2.md §7).
+    """
+    from api.schemas.analyze import Ingredient
+
+    if not payload.ingredients:
+        raise HTTPException(status_code=422, detail="Aucun ingrédient fourni")
+
+    health_profile = resoudre_profil_sante(payload, db)
+
+    items, non_resolus = ingredient_resolver.resoudre(
+        [i.model_dump() for i in payload.ingredients], db
+    )
+
+    if not items:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Aucun ingrédient reconnu parmi : {', '.join(non_resolus)}"
+        )
+
+    analysis = analyser_items(
+        payload.dish_name or "Plat décrit", items, health_profile, db
+    )
+
+    reconnus = [
+        db.query(Ingredient).get(item['ingredient_id']).name
+        for item in items
+        if db.query(Ingredient).get(item['ingredient_id'])
+    ]
+
+    return IngredientsAnalysisResponse(
+        **analysis,
+        matched_ingredients=reconnus,
+        unmatched_ingredients=non_resolus,
+    )
 
 
 @router.get("/{dish_id}/dish_details")

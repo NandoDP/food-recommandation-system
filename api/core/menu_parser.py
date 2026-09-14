@@ -7,6 +7,7 @@ import spacy
 from spacy.matcher import PhraseMatcher
 from sqlalchemy.orm import Session
 from api.schemas.analyze import Ingredient
+from api.core.ingredient_resolver import normaliser
 
 # ===========================================================================
 # 1. CHARGEMENT DES DONNÉES DE TA BASE (une seule fois au démarrage)
@@ -76,17 +77,13 @@ class WestAfricanMenuParser:
         self.fuzzy_names = [name for name, _ in self.fuzzy_choices]
 
     def _normalize(self, text: str) -> str:
-        """Nettoyage agressif mais intelligent"""
-        if not text:
-            return ""
-        text = text.lower()
-        text = unicodedata.normalize("NFKD", text)
-        # Retirer les diacritiques décomposés : sans cela la regex ci-dessous
-        # les remplace par une espace ("thiéboudienne" -> "thie boudienne").
-        text = "".join(c for c in text if not unicodedata.combining(c))
-        text = re.sub(r"[^\w\s]", " ", text)   # garde les espaces
-        text = re.sub(r"\s+", " ", text).strip()
-        return text
+        """Nettoyage agressif mais intelligent.
+
+        Délègue à `ingredient_resolver.normaliser` : la route
+        /analyze-ingredients doit rapprocher les noms exactement comme ici,
+        sinon les deux chemins d'analyse divergeraient sur les accents.
+        """
+        return normaliser(text)
 
     # ===========================================================================
     # 2. EXTRACTION PRINCIPALE

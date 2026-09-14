@@ -50,9 +50,15 @@ class Food(Base):
     __tablename__ = "foods"
     id = Column(String, primary_key=True, default=uuid.uuid4)
     local_name = Column(String, nullable=False)
+    scientific_name = Column(String)
     category = Column(String)
     nutritional_values = Column(JSON)
     glycemic_index = Column(Integer)
+    # Colonnes présentes dans script.sql mais absentes du modèle : leur oubli
+    # faisait échouer nutrition_calculator, qui les lit directement.
+    sodium_content = Column(Integer)
+    potassium_content = Column(Integer)
+    origin = Column(String)
     
     ingredients = relationship("Ingredient", back_populates="food")
     

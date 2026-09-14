@@ -99,13 +99,18 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
 
 Les credentials sont chiffrés avec `N8N_ENCRYPTION_KEY` et stockés dans la base
 `n8n` : ils ne sont **jamais** versionnés dans `workflows/`. À créer une fois
-depuis l'interface :
+depuis l'interface, **avant d'importer les workflows** : l'import rattache les
+nœuds à un credential par son nom, et ne peut le faire que si celui-ci existe
+déjà. Les noms ci-dessous sont donc à respecter à la lettre — sinon les nœuds
+arrivent sans credential et la publication échoue sur
+« *Credential not configured* ». Renommer le credential et réimporter suffit à
+réparer.
 
 | Credential | Type n8n | Valeur |
 |---|---|---|
 | `Telegram NutriSénégal (test)` | Telegram API | `TELEGRAM_TOKEN_N8N` — bot de test de la phase 1 |
 | `Gemini NutriSénégal` | Google Gemini(PaLM) API | `GEMINI_API_KEY` |
-| `Postgres NutriSénégal` | Postgres | hôte `db`, base `nutrisenegal_db`, user `nutrisenegal`, mot de passe `DB_PASSWORD` |
+| `Postgres NutriSénégal` | Postgres | hôte `db` (**pas** `localhost` : depuis le conteneur n8n, `localhost` désigne n8n), base `nutrisenegal_db`, user `nutrisenegal`, mot de passe `DB_PASSWORD`, SSL `disable` |
 
 L'API FastAPI est appelée par des nœuds HTTP Request avec l'en-tête
 `X-API-Key: {{ $env.INTERNAL_API_KEY }}` sur `{{ $env.INTERNAL_API_BASE_URL }}`
@@ -257,4 +262,6 @@ Un export contient les nœuds et leurs paramètres, mais seulement les
 | WF1 : `relation "bot_processed_updates" does not exist` | Migration `001_bot_tables.sql` non appliquée (§5) |
 | `Importing 0 workflows` | Chemin réécrit par Git Bash : voir l'encadré du §5 |
 | `Postgres <version> is not supported` au démarrage | n8n 2.x demande PostgreSQL 16 ou plus ; le compose est en 17 |
+| `password authentication failed for user "nutrisenegal"` | `DB_PASSWORD` a été modifié dans `.env` **après** la création du volume : `POSTGRES_PASSWORD` n'agit qu'à l'initialisation, le rôle garde l'ancien mot de passe. Réaligner sans perdre les données : `docker compose exec -T db psql -U nutrisenegal -d nutrisenegal_db -c "ALTER USER nutrisenegal WITH PASSWORD '<nouveau>';"` puis `docker compose up -d --force-recreate db api n8n` |
+| `Credential not configured` à la publication | Workflow importé avant la création des credentials : créer ceux du §3 avec les noms exacts, puis réimporter |
 | WF1 : le bouton Telegram tourne indéfiniment | Le nœud *Accuser le callback* n'a pas été exécuté : vérifier la branche `callback` du Switch |

@@ -67,15 +67,25 @@ def copier(source_dsn, cible_dsn, dry_run=False):
                 avant = cd.fetchone()[0]
 
                 if not dry_run and lignes:
-                    # ON CONFLICT DO NOTHING : la copie est rejouable
-                    conflit = "(dish_id, ingredient_id)" if table == "dish_ingredients" else "(id)"
-                    execute_values(
-                        cd,
-                        f"INSERT INTO {table} ({liste}) VALUES %s "
-                        f"ON CONFLICT {conflit} DO NOTHING",
-                        lignes,
-                        page_size=500,
-                    )
+                    # ON CONFLICT sans cible : couvre la clé primaire comme les
+                    # index uniques ajoutés depuis (dishes.name, migration 003).
+                    # La copie reste rejouable même si la source contient encore
+                    # les doublons de plats.
+                    if table == "dish_ingredients":
+                        # La cible a été dédoublonnée : des liaisons de la source
+                        # pointent vers des plats qui n'y existent plus. On les
+                        # écarte plutôt que d'échouer sur la clé étrangère.
+                        requete = (
+                            "INSERT INTO dish_ingredients (dish_id, ingredient_id, quantity, unit) "
+                            "SELECT v.dish_id::uuid, v.ingredient_id::uuid, v.quantity::float, v.unit "
+                            "FROM (VALUES %s) AS v(dish_id, ingredient_id, quantity, unit) "
+                            "WHERE EXISTS (SELECT 1 FROM dishes d WHERE d.id = v.dish_id::uuid) "
+                            "  AND EXISTS (SELECT 1 FROM ingredients i WHERE i.id = v.ingredient_id::uuid) "
+                            "ON CONFLICT DO NOTHING"
+                        )
+                    else:
+                        requete = f"INSERT INTO {table} ({liste}) VALUES %s ON CONFLICT DO NOTHING"
+                    execute_values(cd, requete, lignes, page_size=500)
 
                 cd.execute(f"SELECT COUNT(*) FROM {table}")
                 apres = cd.fetchone()[0]

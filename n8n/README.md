@@ -15,6 +15,8 @@ traite que de l'exploitation du service.
 | `workflows/` | Workflows exportés en JSON, un fichier par workflow |
 | [`../migrations/001_bot_tables.sql`](../migrations/001_bot_tables.sql) | Tables `bot_sessions`, `bot_processed_updates`, `bot_errors` |
 | [`../migrations/002_users_language_wolof.sql`](../migrations/002_users_language_wolof.sql) | Autorise `wo` dans `users.language` (onboarding trilingue) |
+| [`../migrations/003_dedoublonne_dishes.sql`](../migrations/003_dedoublonne_dishes.sql) | Un nom, un plat : dédoublonne `dishes` et pose l'index unique |
+| [`../migrations/copie_referentiel.py`](../migrations/copie_referentiel.py) | Recopie `foods` / `ingredients` / `dishes` d'une base à l'autre |
 
 | Workflow | Fichier | État |
 |---|---|---|

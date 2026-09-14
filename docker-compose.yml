@@ -15,7 +15,9 @@ services:
       # Cree la base `n8n` (workflows + credentials) sur un volume neuf
       - ./n8n/init-n8n-db.sql:/docker-entrypoint-initdb.d/00-n8n-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nutrisenegal"]
+      # -d explicite : sans lui pg_isready vise la base « nutrisenegal », qui
+      # n'existe pas, et chaque sonde laisse un FATAL dans les logs
+      test: ["CMD-SHELL", "pg_isready -U nutrisenegal -d nutrisenegal_db"]
       interval: 10s
       timeout: 5s
       retries: 5

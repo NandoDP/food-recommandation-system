@@ -10,7 +10,7 @@ traite que de l'exploitation du service.
 
 | Fichier | Rôle |
 |---|---|
-| [`../Dockerfile.n8n`](../Dockerfile.n8n) | Image n8n 2.39.5 + `ffmpeg` (conversion PCM → OGG/Opus pour `sendVoice`, phase 2) |
+| [`../Dockerfile.n8n`](../Dockerfile.n8n) | Image n8n 2.39.5 + binaire `ffmpeg` statique (conversion PCM → OGG/Opus pour `sendVoice`, phase 2) |
 | [`init-n8n-db.sql`](init-n8n-db.sql) | Crée la base `n8n` dans le PostgreSQL du projet |
 | `workflows/` | Workflows exportés en JSON, un fichier par workflow |
 | [`../migrations/001_bot_tables.sql`](../migrations/001_bot_tables.sql) | Tables `bot_sessions`, `bot_processed_updates`, `bot_errors` |
@@ -175,11 +175,16 @@ les workflows suivants consomment : `kind` (`text` / `voice` / `callback` /
 docker compose exec -T db psql -U nutrisenegal -d nutrisenegal_db   < migrations/001_bot_tables.sql
 
 # 2. Import du workflow
-docker compose exec n8n n8n import:workflow --separate --input=/workflows
+docker compose exec -T n8n n8n import:workflow --separate --input=/workflows/
 
 # 3. Redémarrer pour que l'éditeur voie le workflow importé
 docker compose restart n8n
 ```
+
+> **Sous Git Bash (Windows)**, préfixer les commandes contenant un chemin
+> absolu du conteneur par `MSYS_NO_PATHCONV=1` : sinon `/workflows/` est
+> réécrit en `C:/Program Files/Git/workflows/` et l'import annonce
+> tranquillement « 0 workflows ». PowerShell et Linux ne sont pas concernés.
 
 Puis dans l'éditeur :
 
@@ -250,4 +255,6 @@ Un export contient les nœuds et leurs paramètres, mais seulement les
 | `$env.X` vide dans un nœud | Variable absente du service `n8n` du compose, ou conteneur non recréé |
 | Credentials illisibles après une remise à zéro | `N8N_ENCRYPTION_KEY` a changé : restaurer l'ancienne valeur ou recréer les credentials |
 | WF1 : `relation "bot_processed_updates" does not exist` | Migration `001_bot_tables.sql` non appliquée (§5) |
+| `Importing 0 workflows` | Chemin réécrit par Git Bash : voir l'encadré du §5 |
+| `Postgres 14 is not supported` au démarrage | n8n 2.x demande PostgreSQL 16 ou plus ; l'instance fonctionne mais n'est pas supportée |
 | WF1 : le bouton Telegram tourne indéfiniment | Le nœud *Accuser le callback* n'a pas été exécuté : vérifier la branche `callback` du Switch |

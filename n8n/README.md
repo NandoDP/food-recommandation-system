@@ -19,7 +19,7 @@ traite que de l'exploitation du service.
 | Workflow | Fichier | État |
 |---|---|---|
 | WF1 `telegram-ingress` | [`workflows/wf1-telegram-ingress.json`](workflows/wf1-telegram-ingress.json) | Point d'entrée complet ; appelle WF6, branches texte/vocal/callback en attente de WF3/WF2/WF7 |
-| WF6 `onboarding` | [`workflows/wf6-onboarding.json`](workflows/wf6-onboarding.json) | Création de profil de bout en bout |
+| WF6 `onboarding` | [`workflows/wf6-onboarding.json`](workflows/wf6-onboarding.json) | Création de profil de bout en bout ; à publier comme WF1 |
 
 ---
 
@@ -285,12 +285,15 @@ docker compose exec -T n8n n8n import:workflow --separate --input=/workflows/
 docker compose restart n8n
 ```
 
-WF6 est un sous-workflow : **il n'a pas à être activé**, WF1 l'appelle. En
-revanche l'import **désactive** les workflows importés, WF1 compris — il faut
-le republier et redémarrer, sinon le webhook Telegram n'est plus enregistré :
+L'import **désactive tous les workflows importés**. Il faut republier les deux,
+puis redémarrer : sinon WF1 n'a plus de webhook enregistré, et WF6 — même
+appelé par WF1 et non déclenché directement — refuse de s'exécuter avec
+`Workflow is not active and cannot be executed`. En n8n 2.x, un sous-workflow
+doit être publié pour être appelable.
 
 ```bash
 docker compose exec -T n8n n8n publish:workflow --id=wf1-telegram-ingress
+docker compose exec -T n8n n8n publish:workflow --id=wf6-onboarding
 docker compose restart n8n
 curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
 ```
@@ -354,7 +357,8 @@ Un export contient les nœuds et leurs paramètres, mais seulement les
 | `Postgres <version> is not supported` au démarrage | n8n 2.x demande PostgreSQL 16 ou plus ; le compose est en 17 |
 | `password authentication failed for user "nutrisenegal"` | `DB_PASSWORD` a été modifié dans `.env` **après** la création du volume : `POSTGRES_PASSWORD` n'agit qu'à l'initialisation, le rôle garde l'ancien mot de passe. Réaligner sans perdre les données : `docker compose exec -T db psql -U nutrisenegal -d nutrisenegal_db -c "ALTER USER nutrisenegal WITH PASSWORD '<nouveau>';"` puis `docker compose up -d --force-recreate db api n8n` |
 | `Credential not configured` à la publication | Workflow importé avant la création des credentials : créer ceux du §3 avec les noms exacts, puis réimporter |
-| Le bot ne répond plus après un import | L'import désactive les workflows : republier WF1 et redémarrer n8n (§6) |
+| Le bot ne répond plus après un import | L'import désactive les workflows : republier WF1 **et** WF6, puis redémarrer n8n (§6) |
+| `Workflow is not active and cannot be executed` | Le sous-workflow appelé n'est pas publié : `n8n publish:workflow --id=wf6-onboarding` |
 | WF6 : `violates check constraint "users_language_check"` | Migration `002_users_language_wolof.sql` non appliquée |
 | `Bad Request: reply markup is too long` | Un clavier dépasse ~10 ko. Vérifier que les nœuds de référentiel sont bien en **Execute Once** : sinon ils tournent une fois par item reçu et multiplient les listes |
 | Un nœud renvoie N fois trop de données | Même cause : en n8n un nœud s'exécute une fois par item d'entrée. `Execute Once` dans les réglages du nœud |

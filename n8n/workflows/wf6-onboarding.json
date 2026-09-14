@@ -4,7 +4,7 @@
   "active": false,
   "nodes": [
     {
-      "id": "0ff73b65-c9f2-4232-9ae4-817a76577ee3",
+      "id": "efdc90b6-5f2b-4285-b496-5cc931df0fda",
       "name": "Execute Workflow Trigger",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
@@ -18,7 +18,7 @@
       "notes": "Reçoit l'enveloppe plate de WF1 (kind, text, callback_data, session_state, session_draft…)"
     },
     {
-      "id": "dafb3cf9-25ab-4e4b-a4bd-56978bcbce37",
+      "id": "33749686-e615-4688-b2ab-9459498ccf92",
       "name": "Bouton pressé ?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -36,7 +36,7 @@
           },
           "conditions": [
             {
-              "id": "1c8f856a-311a-4c7f-bcab-c83bf7581070",
+              "id": "5e85587e-6f7b-400a-963b-c9c3484ba089",
               "leftValue": "={{ $json.kind }}",
               "rightValue": "callback",
               "operator": {
@@ -51,7 +51,7 @@
       }
     },
     {
-      "id": "38f64016-118f-48d0-9e06-7825401eb9a9",
+      "id": "215e5656-5a5c-4210-9b56-41b7ee251671",
       "name": "Accuser le bouton",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -71,7 +71,7 @@
       "notes": "Sans cet appel, le bouton tourne indéfiniment côté Telegram."
     },
     {
-      "id": "cd6cabd2-98a6-4f11-897a-45523577ae10",
+      "id": "2beb6c15-38e4-463e-8a5d-8d49015c72c4",
       "name": "Référentiel maladies",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -83,10 +83,11 @@
         "url": "={{ $env.INTERNAL_API_BASE_URL }}/health-profiles/diseases",
         "options": {}
       },
-      "notes": "Fin des UUID codés en dur : la liste vient de l'API (ARCHITECTURE_V2 §5, WF6)."
+      "notes": "Fin des UUID codés en dur : la liste vient de l'API (ARCHITECTURE_V2 §5, WF6).",
+      "executeOnce": true
     },
     {
-      "id": "2f531177-6a2e-41e4-9fc1-fa7f0b4188c9",
+      "id": "080a3c5a-c040-447c-aaef-ccfb5d9e2177",
       "name": "Référentiel allergènes",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -97,10 +98,12 @@
       "parameters": {
         "url": "={{ $env.INTERNAL_API_BASE_URL }}/health-profiles/allergens",
         "options": {}
-      }
+      },
+      "notes": "« Exécuter une seule fois » est indispensable : ce nœud reçoit les 5 maladies du nœud précédent et appellerait l'API 5 fois, soit 110 allergènes et un clavier au-dessus de la limite Telegram de 10 ko.",
+      "executeOnce": true
     },
     {
-      "id": "ddf68b22-30d6-4185-abd9-2b7a0692ce7a",
+      "id": "1c27d160-2567-49b2-8cb6-a45253d67c2e",
       "name": "Machine à états",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -115,7 +118,7 @@
       "notes": "Fonction pure : enveloppe + référentiels -> état suivant, brouillon, message Telegram à émettre."
     },
     {
-      "id": "e07c1223-8dc7-47f9-a28d-0bcf7b664597",
+      "id": "cc6ad086-93ce-4fd8-8aa9-05c2f7cc758f",
       "name": "Finaliser ?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -133,7 +136,7 @@
           },
           "conditions": [
             {
-              "id": "7e8cb9e8-7a1c-4b21-b4b4-da0b55f5a990",
+              "id": "85bfd150-1ea3-448c-9d47-c2aafd1bcc16",
               "leftValue": "={{ $json.finalize }}",
               "rightValue": "",
               "operator": {
@@ -149,7 +152,7 @@
       }
     },
     {
-      "id": "3f31c941-93f5-4f3f-ad28-fad82d85da7f",
+      "id": "3ae7ecb7-90a0-460d-96f5-82237c04573a",
       "name": "Inscrire l’utilisateur",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -170,7 +173,7 @@
       "onError": "continueRegularOutput"
     },
     {
-      "id": "3d596a70-31ca-4259-bf14-1a86175d61e7",
+      "id": "2c4f8d1a-c522-4aad-877e-07988bea6db2",
       "name": "Créer le profil santé",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -191,7 +194,7 @@
       "onError": "continueRegularOutput"
     },
     {
-      "id": "a167ab5d-15c4-42c5-b423-2cd50aff0eac",
+      "id": "d21086a9-4a11-4e1e-b713-884faf05fb90",
       "name": "Relire le profil",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -206,7 +209,7 @@
       "notes": "Source unique de l'identifiant de profil, que la création ait eu lieu maintenant ou avant."
     },
     {
-      "id": "9b6b253a-65fa-4469-baaf-432d81a7ec0e",
+      "id": "53845853-21a8-4a48-bc5c-753b0f13f893",
       "name": "Enregistrer les maladies",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -225,7 +228,7 @@
       }
     },
     {
-      "id": "040d1720-8b9a-4c7a-9b83-ea0cb9923bec",
+      "id": "af4eca47-d81f-456c-81d9-cc6b76d90373",
       "name": "Enregistrer les allergènes",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -244,7 +247,7 @@
       }
     },
     {
-      "id": "99a163ce-ced8-4f76-a714-3dacfcb4d726",
+      "id": "aa3efa8d-6e9a-4787-8cc6-0517524626ce",
       "name": "Récapitulatif",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -258,7 +261,7 @@
       }
     },
     {
-      "id": "e4315b0b-f9b9-4551-b8ac-35e28439c73e",
+      "id": "4e786e14-012f-479f-b8cc-a2f2048597ef",
       "name": "Charge utile",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -272,7 +275,7 @@
       }
     },
     {
-      "id": "50e2d79e-5946-432f-bc3c-d032afdc6fcb",
+      "id": "79a5330b-63a8-4963-af8f-070e2aa3245f",
       "name": "Enregistrer la session",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.7,
@@ -296,7 +299,7 @@
       "notes": "L'état est enregistré avant l'envoi : un échec Telegram ne fait pas reculer la conversation."
     },
     {
-      "id": "253112ce-0a46-46b6-9040-b1b9df1a31d3",
+      "id": "1e9fc436-9f1f-4bbb-ac93-117b3a79158f",
       "name": "Répondre à l’utilisateur",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -316,7 +319,7 @@
       "notes": "sendMessage ou editMessageText selon que l'utilisateur a écrit ou appuyé sur un bouton."
     },
     {
-      "id": "4867f77d-1e13-4922-ad23-d31072c3962f",
+      "id": "940a0d97-20c4-494a-bff4-ec1f4e378a3c",
       "name": "Note WF6",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -332,7 +335,7 @@
       }
     },
     {
-      "id": "395ab01a-efb8-41d6-83bf-3edf4b1fb19b",
+      "id": "961d0aeb-9994-40e9-ba6a-991ee67e1142",
       "name": "Note machine",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -348,7 +351,7 @@
       }
     },
     {
-      "id": "8d372537-d14f-491d-aeb9-a11704dada44",
+      "id": "087a9052-d312-4cd0-8015-afffd28c9e24",
       "name": "Note finalisation",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -364,7 +367,7 @@
       }
     },
     {
-      "id": "1ea8b7e3-b9a8-49f9-9bf6-a06be1253d12",
+      "id": "7123b420-7c54-4c67-bffa-44f7f3a700c4",
       "name": "Note telegram",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,

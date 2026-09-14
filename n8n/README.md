@@ -259,6 +259,11 @@ Trois choix de construction :
   Telegram : les claviers sont construits à partir des listes de l'API, et le
   nœud Telegram ne sait pas produire un clavier dynamique. Le token vient de
   `$env.TELEGRAM_TOKEN_N8N`.
+- **Les deux nœuds de référentiel sont en « Execute Once »** : un nœud n8n
+  s'exécute une fois **par item reçu**. Sans ce réglage, le nœud des allergènes
+  reçoit les 5 maladies du nœud précédent, appelle l'API 5 fois et renvoie 110
+  allergènes — le clavier dépasse alors la limite de ~10 ko de `reply_markup`
+  et Telegram répond `Bad Request: reply markup is too long`.
 - **La finalisation tolère le rejeu** : `register` et la création du profil
   acceptent un 400 « existe déjà », l'identifiant de profil est relu plutôt que
   déduit de la réponse de création, et `list_diseases` / `list_allergens`
@@ -300,7 +305,7 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
 | `abc` puis `800` | Deux refus, la question du poids reste posée |
 | `72,4` | Clavier des 5 maladies, avec « Aucune » et « Valider » |
 | Cocher / décocher | Le clavier se met à jour, la case bascule |
-| Valider | Clavier des allergènes |
+| Valider | Clavier des 22 allergènes (24 boutons, ~2,3 ko) |
 | Terminer | Récapitulatif, et le profil existe en base |
 
 ```sql
@@ -351,4 +356,6 @@ Un export contient les nœuds et leurs paramètres, mais seulement les
 | `Credential not configured` à la publication | Workflow importé avant la création des credentials : créer ceux du §3 avec les noms exacts, puis réimporter |
 | Le bot ne répond plus après un import | L'import désactive les workflows : republier WF1 et redémarrer n8n (§6) |
 | WF6 : `violates check constraint "users_language_check"` | Migration `002_users_language_wolof.sql` non appliquée |
+| `Bad Request: reply markup is too long` | Un clavier dépasse ~10 ko. Vérifier que les nœuds de référentiel sont bien en **Execute Once** : sinon ils tournent une fois par item reçu et multiplient les listes |
+| Un nœud renvoie N fois trop de données | Même cause : en n8n un nœud s'exécute une fois par item d'entrée. `Execute Once` dans les réglages du nœud |
 | WF1 : le bouton Telegram tourne indéfiniment | Le nœud *Accuser le callback* n'a pas été exécuté : vérifier la branche `callback` du Switch |

@@ -106,20 +106,26 @@ Calculs agrégés des valeurs nutritionnelles par portion :
 
 ### 4. **Système de Recommandation** (`api/routes/analyze.py`)
 
-Algorithme de filtrage collaboratif et basé sur le contenu :
+Moteur de règles déterministe (`api/core/nutrition_engine.py`) : chaque plat
+candidat est scoré contre le profil santé, puis trié. Il n'y a pas de filtrage
+collaboratif ni de modèle appris — aucun historique inter-utilisateurs n'est
+exploité.
 
 ```python
 Entrées :
-  - Profil santé utilisateur
-  - Historique alimentaire
-  - Contraintes médicales
+  - Profil santé utilisateur (allergènes, maladies, poids)
+  - Contraintes médicales (seuils sodium, IG, protéines…)
 
 Sorties :
   - Top N plats recommandés
-  - Alternatives personnalisées
+  - Alternatives personnalisées (allergènes exclus d'office)
   - Raisons de recommandation
   - Highlights nutritionnels
 ```
+
+Pondération du score : allergènes 40 %, maladies 35 %, équilibre nutritionnel
+25 %. Un allergène détecté met la composante allergène à 0 et exclut le plat
+des alternatives proposées.
 
 ---
 
@@ -166,13 +172,13 @@ venv\Scripts\activate  # Windows
 # 3. Installer dépendances
 pip install -r requirements.txt
 
-# 4. Télécharger modèle spaCy français
-pip install https://github.com/explosion/spacy-models/releases/download/fr_core_news_sm-3.7.0/fr_core_news_sm-3.7.0-py3-none-any.whl
-
-# 5. Configurer variables d'environnement
+# 4. Configurer variables d'environnement
 cp .env.example .env
 # Éditer .env avec vos credentials
 ```
+
+> Aucun modèle spaCy pré-entraîné n'est requis : le parser de menus utilise
+> `spacy.blank("fr")` + `PhraseMatcher`, alimentés par les ingrédients en base.
 
 ### Configuration Base de Données
 
@@ -180,13 +186,33 @@ cp .env.example .env
 # 1. Créer la base PostgreSQL
 createdb nutrisenegal_db
 
-# 2. Exécuter les migrations
-alembic upgrade head
+# 2. Créer le schéma (pas de migrations Alembic dans ce dépôt)
+psql -d nutrisenegal_db -f script.sql
 
 # 3. Charger les données initiales (optionnel)
 python fao_data_processor.py
 python extract_dishes.py
 ```
+
+### Démarrage avec Docker
+
+La stack complète (PostgreSQL + API + bot) se lance en une commande. `script.sql`
+est appliqué automatiquement à la première initialisation du volume Postgres.
+
+```bash
+# Renseigner au minimum SECRET_KEY, DB_PASSWORD et TELEGRAM_TOKEN
+cp .env.example .env
+
+docker compose up --build
+```
+
+| Service | Rôle | Exposition |
+|---------|------|-----------|
+| `db` | PostgreSQL 14 | `localhost:5432` |
+| `api` | API FastAPI | `localhost:8000` ([/docs](http://localhost:8000/docs)) |
+| `bot` | Bot Telegram (polling) | aucune |
+
+Pour lancer la stack sans le bot : `docker compose up --build db api`.
 
 ### Variables d'Environnement
 
@@ -251,8 +277,6 @@ Voir le dossier `notebooks/` pour des analyses détaillées :
 
 1. **01_data_exploration.ipynb** : Exploration des données nutritionnelles
 2. **02_recommendation_engine.ipynb** : Analyse du moteur de recommandation
-3. **03_health_impact_analysis.ipynb** : Impact des choix alimentaires sur la santé
-4. **04_nlp_menu_parsing.ipynb** : Démonstration du parser NLP
 
 ---
 
@@ -352,6 +376,9 @@ nutrisenegal/
 ├── requirements.txt              # Dépendances Python
 ├── .env.example                  # Template configuration
 ├── script.sql                    # Schéma SQL
+├── Dockerfile                    # Image API
+├── Dockerfile.bot                # Image bot Telegram
+├── docker-compose.yml            # Stack db + api + bot
 └── README.md                     # Cette documentation
 ```
 
@@ -380,6 +407,7 @@ nutrisenegal/
 ## 📚 Documentation Additionnelle
 
 <!-- - [`docs.md`](docs.md) : Documentation technique détaillée -->
+- [`ARCHITECTURE_V2.md`](ARCHITECTURE_V2.md) : Proposition de refonte (n8n, voix, wolof via Gemini)
 - [`ER_Diagram.md`](ER_Diagram.md) : Schéma entité-relation
 - [`DATA_DICTIONARY.md`](DATA_DICTIONARY.md) : Dictionnaire de données
 - [`checklist_projet_nutrition.md`](checklist_projet_nutrition.md) : Checklist projet
@@ -439,8 +467,8 @@ Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de 
 - [ ] Intégration modèle ML pour prédictions caloriques
 - [ ] Dashboard analytique avec Streamlit
 - [ ] Support multilingue (Wolof, Anglais)
-- [ ] Containerisation avec Docker
 - [ ] CI/CD avec GitHub Actions
+- [x] Containerisation avec Docker (`Dockerfile`, `Dockerfile.bot`, `docker-compose.yml`)
 
 ---
 

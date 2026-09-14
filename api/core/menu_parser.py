@@ -1,3 +1,4 @@
+import json
 import re
 import unicodedata
 from typing import List, Dict, Tuple, Optional
@@ -19,6 +20,27 @@ class WestAfricanMenuParser:
         self._load_ingredients()
         self._build_fuzzy_index()
 
+    def _get_aliases(self, ing) -> List[str]:
+        """Aliases d'un ingrédient, si le modèle en expose.
+
+        La colonne n'existe pas encore en base : on tolère son absence plutôt
+        que de faire échouer tout le parser. Accepte une méthode
+        `get_aliases()`, ou un attribut `aliases` (liste ou chaîne JSON).
+        """
+        getter = getattr(ing, 'get_aliases', None)
+        if callable(getter):
+            return list(getter() or [])
+
+        raw = getattr(ing, 'aliases', None)
+        if not raw:
+            return []
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except ValueError:
+                return []
+        return list(raw) if isinstance(raw, (list, tuple)) else []
+
     def _load_ingredients(self):
         """Charge tous les ingrédients + aliases dans spaCy PhraseMatcher"""
         ingredients = self.db.query(Ingredient).all()
@@ -34,7 +56,7 @@ class WestAfricanMenuParser:
             patterns.append(self.nlp.make_doc(main_name))
 
             # Aliases (très important pour wolof, orthographes variables)
-            aliases = ing.get_aliases() or []  # ← ajoute une colonne ou un champ JSON
+            aliases = self._get_aliases(ing)
             for alias in aliases:
                 norm = self._normalize(alias)
                 self.alias_to_id[norm] = ing.id
@@ -48,7 +70,7 @@ class WestAfricanMenuParser:
         all_names = []
         for ing in self.db.query(Ingredient).all():
             all_names.append((ing.id, self._normalize(ing.name)))
-            for alias in (ing.get_aliases() or []):
+            for alias in self._get_aliases(ing):
                 all_names.append((ing.id, self._normalize(alias)))
         self.fuzzy_choices = [(name, ing_id) for ing_id, name in all_names]
         self.fuzzy_names = [name for name, _ in self.fuzzy_choices]
@@ -59,6 +81,9 @@ class WestAfricanMenuParser:
             return ""
         text = text.lower()
         text = unicodedata.normalize("NFKD", text)
+        # Retirer les diacritiques décomposés : sans cela la regex ci-dessous
+        # les remplace par une espace ("thiéboudienne" -> "thie boudienne").
+        text = "".join(c for c in text if not unicodedata.combining(c))
         text = re.sub(r"[^\w\s]", " ", text)   # garde les espaces
         text = re.sub(r"\s+", " ", text).strip()
         return text
@@ -77,7 +102,9 @@ class WestAfricanMenuParser:
             return []
 
         normalized = self._normalize(text)
-        doc = self.nlp(text)
+        # Les motifs du PhraseMatcher sont construits sur des noms normalisés :
+        # le document doit l'être aussi pour que la comparaison ait un sens.
+        doc = self.nlp(normalized)
 
         # Étape 1 : PhraseMatcher (très rapide et précis)
         matches = self.phrase_matcher(doc)
@@ -107,9 +134,14 @@ class WestAfricanMenuParser:
         for token in uncovered_tokens:
             if token.is_stop or token.is_punct or len(token.text) < 3:
                 continue
-            best_name, score, _ = process.extractOne(
+            if not self.fuzzy_names:
+                break  # aucun ingrédient en base : rien à rapprocher
+            best = process.extractOne(
                 token.text, self.fuzzy_names, scorer=fuzz.token_set_ratio
             )
+            if best is None:
+                continue
+            best_name, score, _ = best
             if score > 88:  # seuil optimisé sur 200 plats ouest-africains
                 ing_id = next(id for name, id in self.fuzzy_choices if name == best_name)
                 qty, unit = self._extract_quantity_before(token, doc)

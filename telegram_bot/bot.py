@@ -42,7 +42,7 @@ from telegram_bot.services.action_handles import (
     ANALYZING_DISH
 )
 
-from config import settings
+from telegram_bot.config import settings
 
 # Logging
 logging.basicConfig(

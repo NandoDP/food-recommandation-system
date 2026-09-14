@@ -662,14 +662,10 @@ def suggest_alternatives(
     
     # 4. Identifier les problèmes
     problems = []
-    for alert in original_analysis['allergen_alerts']:
-        if alert['level'] in [AlertLevel.DANGER, AlertLevel.CRITICAL]:
-            problems.append('allergen')
-            break
-    for alert in original_analysis['disease_alerts']:
-        if alert['level'] in [AlertLevel.DANGER, AlertLevel.CRITICAL]:
-            problems.append('disease')
-            break
+    if _has_blocking_alert(original_analysis['allergen_alerts']):
+        problems.append('allergen')
+    if _has_blocking_alert(original_analysis['disease_alerts']):
+        problems.append('disease')
     
     # 5. Chercher plats alternatifs du même type de repas
     alternative_dishes = db.query(Dish).filter(
@@ -698,6 +694,12 @@ def suggest_alternatives(
             hp
         )
         
+        # Sécurité : un allergène du profil est une contre-indication absolue.
+        # L'alternative est écartée quel que soit son score, y compris quand
+        # celui-ci dépasse celui du plat d'origine.
+        if _has_blocking_alert(alt_analysis['allergen_alerts']):
+            continue
+
         # Ne proposer que si score meilleur
         if alt_analysis['score'] > original_analysis['score']:
             # Expliquer pourquoi c'est mieux
@@ -740,6 +742,22 @@ def suggest_alternatives(
         original_score=original_analysis['score'],
         alternatives=[AlternativeDish(**alt) for alt in top_alternatives],
         substitution_suggestions=substitutions
+    )
+
+
+BLOCKING_ALERT_LEVELS = (AlertLevel.DANGER, AlertLevel.CRITICAL)
+
+
+def _has_blocking_alert(alerts: List[Dict]) -> bool:
+    """Vrai si au moins une alerte atteint un niveau bloquant (danger/critique).
+
+    Les alertes produites par NutritionEngine stockent le niveau sous forme de
+    chaîne ; AlertLevel hérite de str, la comparaison reste donc valide dans les
+    deux sens.
+    """
+    return any(
+        alert.get('level') in BLOCKING_ALERT_LEVELS
+        for alert in alerts or []
     )
 
 

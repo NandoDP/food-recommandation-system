@@ -7,7 +7,25 @@ Ce répertoire contient les tests unitaires et d'intégration pour le projet Nut
 - `test_nutrition_engine.py` - Tests du moteur de règles nutritionnelles
 - `test_api.py` - Tests des endpoints de l'API
 - `test_menu_parser.py` - Tests du parser NLP
-- `conftest.py` - Configuration pytest
+- `test_alternatives_filter.py` - Non-régression du filtre allergènes de `/alternatives`
+- `conftest.py` - Fixtures partagées (base SQLite en mémoire, client FastAPI)
+
+## Base de test
+
+Aucun test ne touche PostgreSQL. `conftest.py` monte une base SQLite en mémoire
+(recréée à chaque test) et surcharge la dépendance de session de chaque module
+de routes, qui instancie son propre `Database()`.
+
+Fixtures disponibles :
+
+| Fixture | Rôle |
+|---------|------|
+| `engine` | Moteur SQLite en mémoire (portée fonction) |
+| `db_session` | Session SQLAlchemy isolée |
+| `seeded_db` | 2 plats, leurs ingrédients et 1 utilisateur |
+| `client` | `TestClient` FastAPI branché sur la base de test |
+
+Rappel : tous les routers sont montés sous `/api` (voir `api/router.py`).
 
 ## Exécution des tests
 
@@ -24,13 +42,14 @@ pytest --cov=api --cov-report=html
 ### Tests spécifiques
 ```bash
 pytest tests/test_nutrition_engine.py -v
-pytest tests/test_api.py::TestHealthProfilesAPI -v
+pytest tests/test_api.py::TestHealthProfiles -v
 ```
 
-### Tests par marqueur
+### Tests ciblés
+Aucun marqueur n'est défini pour l'instant : cibler un fichier ou une classe.
+
 ```bash
-pytest -m unit  # Tests unitaires uniquement
-pytest -m integration  # Tests d'intégration uniquement
+pytest tests/test_api.py::TestAlternatives -v
 ```
 
 ## Couverture de code

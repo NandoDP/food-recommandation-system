@@ -1,141 +1,203 @@
 """
-Tests pour les endpoints de l'API
+Tests des endpoints de l'API
+
+Tous les routers sont montés sous le préfixe `/api` (voir `api/router.py`) :
+les chemins nus (`/dishes`, `/users/register`) renvoient 404.
+
+Le client est branché sur la base SQLite de `conftest.py` : aucun accès au
+PostgreSQL de développement.
 """
 import pytest
-from fastapi.testclient import TestClient
-from api.main import app
 
 
-client = TestClient(app)
+class TestInfrastructure:
+    """Endpoints hors router, toujours disponibles"""
 
+    def test_racine(self, client):
+        response = client.get('/')
 
-class TestHealthProfilesAPI:
-    """Tests pour les endpoints de profils santé"""
-    
-    def test_create_user_profile(self):
-        """Test création d'un profil utilisateur"""
-        user_data = {
-            'id': 'test_user_api_1',
-            'first_name': 'Test',
-            'last_name': 'User',
-            'weight': 75
-        }
-        
-        response = client.post('/users/register', json=user_data)
-        
-        # Peut retourner 200 (créé) ou 409 (déjà existe)
-        assert response.status_code in [200, 201, 409]
-    
-    def test_get_user_profile(self):
-        """Test récupération d'un profil"""
-        # Créer d'abord un utilisateur
-        user_id = 'test_user_api_2'
-        user_data = {
-            'id': user_id,
-            'first_name': 'Test',
-            'last_name': 'Profile',
-            'weight': 70
-        }
-        
-        client.post('/users/register', json=user_data)
-        
-        # Récupérer le profil
-        response = client.get(f'/users/{user_id}/profile')
-        
-        if response.status_code == 200:
-            data = response.json()
-            assert 'user' in data or 'id' in data
-
-
-class TestAnalysisAPI:
-    """Tests pour les endpoints d'analyse"""
-    
-    def test_get_dishes_list(self):
-        """Test récupération de la liste des plats"""
-        response = client.get('/dishes', params={'limit': 10})
-        
         assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
-    
-    def test_analyze_dish_endpoint(self):
-        """Test endpoint d'analyse de plat"""
-        # D'abord récupérer un plat
-        dishes_response = client.get('/dishes', params={'limit': 1})
-        
-        if dishes_response.status_code == 200 and len(dishes_response.json()) > 0:
-            dish_id = dishes_response.json()[0]['id']
-            
-            # Analyser le plat
-            analysis_request = {
-                'dish_id': dish_id,
-                'user_id': 'test_user_api_1'
-            }
-            
-            response = client.post('/analyze-dish', json=analysis_request)
-            
-            # Peut échouer si l'utilisateur n'existe pas, ce qui est OK pour le test
-            assert response.status_code in [200, 404, 422]
-    
-    def test_get_recommendations(self):
-        """Test endpoint de recommandations"""
-        response = client.get('/recommendations/test_user_1', params={'limit': 5})
-        
-        # Peut retourner 404 si l'utilisateur n'existe pas
-        assert response.status_code in [200, 404]
-        
-        if response.status_code == 200:
-            data = response.json()
-            assert 'recommendations' in data or isinstance(data, list)
+        assert response.json()['status'] == 'operational'
 
+    def test_healthcheck(self, client):
+        response = client.get('/health')
 
-class TestHealthChecks:
-    """Tests de santé de l'API"""
-    
-    def test_api_is_running(self):
-        """Test que l'API est accessible"""
-        # Test sur le endpoint docs qui existe toujours
-        response = client.get('/docs')
-        assert response.status_code in [200, 307]  # 307 = redirect
-    
-    def test_openapi_schema(self):
-        """Test que le schéma OpenAPI est disponible"""
+        assert response.status_code == 200
+        assert response.json()['status'] == 'healthy'
+
+    def test_schema_openapi(self, client):
         response = client.get('/openapi.json')
+
         assert response.status_code == 200
         data = response.json()
         assert 'openapi' in data
-        assert 'paths' in data
+        assert '/api/dishes' in data['paths']
+
+    def test_docs_accessibles(self, client):
+        assert client.get('/docs').status_code == 200
 
 
-class TestInputValidation:
-    """Tests de validation des entrées"""
-    
-    def test_invalid_user_id_format(self):
-        """Test avec ID utilisateur invalide"""
-        response = client.get('/recommendations/', params={'limit': 5})
-        
-        # Devrait retourner une erreur de validation
-        assert response.status_code in [404, 422]
-    
-    def test_negative_limit(self):
-        """Test avec limite négative"""
-        response = client.get('/dishes', params={'limit': -1})
-        
-        # Devrait gérer gracieusement
-        assert response.status_code in [200, 422]
-    
-    def test_missing_required_fields(self):
-        """Test avec champs obligatoires manquants"""
-        incomplete_data = {
-            'first_name': 'Test'
-            # Manque id, last_name, weight
-        }
-        
-        response = client.post('/users/register', json=incomplete_data)
-        
-        # Devrait retourner erreur de validation
+class TestPrefixeApi:
+    """Le préfixe /api n'est pas optionnel"""
+
+    @pytest.mark.parametrize('path', ['/dishes', '/users/register',
+                                      '/health-profiles/diseases'])
+    def test_chemin_sans_prefixe_renvoie_404(self, client, path):
+        assert client.get(path).status_code == 404
+
+
+class TestUsers:
+    def test_inscription(self, client):
+        response = client.post('/api/users/register', json={
+            'id': 'u-new',
+            'first_name': 'Awa',
+            'last_name': 'Diop',
+            'gender': 'F',
+            'weight': 65,
+        })
+
+        assert response.status_code == 200
+        assert response.json()['user_id'] == 'u-new'
+
+    def test_inscription_en_double_refusee(self, client, seeded_db):
+        payload = {'id': 'u1', 'first_name': 'Test',
+                   'last_name': 'User', 'gender': 'F'}
+
+        response = client.post('/api/users/register', json=payload)
+
+        assert response.status_code == 400
+
+    def test_champs_obligatoires_manquants(self, client):
+        response = client.post('/api/users/register', json={'first_name': 'Test'})
+
         assert response.status_code == 422
 
+    def test_profil_utilisateur_inexistant(self, client):
+        response = client.get('/api/users/inconnu/profile')
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+        assert response.status_code == 404
+
+
+class TestDishes:
+    def test_liste_des_plats(self, client, seeded_db):
+        response = client.get('/api/dishes', params={'limit': 10})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert {d['name'] for d in data} == {'Thiéboudienne', 'Mafé cacahuète'}
+
+    def test_liste_vide_sans_donnees(self, client):
+        response = client.get('/api/dishes')
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_filtre_meal_type(self, client, seeded_db):
+        response = client.get('/api/dishes', params={'meal_type': 'lunch'})
+
+        assert response.status_code == 200
+        assert len(response.json()) == 2
+
+    def test_meal_type_invalide_rejete(self, client):
+        response = client.get('/api/dishes', params={'meal_type': 'brunch'})
+
+        assert response.status_code == 422
+
+    def test_limite_negative_rejetee(self, client):
+        response = client.get('/api/dishes', params={'limit': -1})
+
+        assert response.status_code == 422
+
+    def test_limite_trop_grande_rejetee(self, client):
+        response = client.get('/api/dishes', params={'limit': 1000})
+
+        assert response.status_code == 422
+
+    def test_details_plat_inexistant(self, client):
+        response = client.get('/api/inconnu/dish_details')
+
+        assert response.status_code == 404
+
+
+class TestAnalyse:
+    def test_analyse_plat_inexistant(self, client):
+        response = client.post('/api/analyze-dish', json={
+            'dish_id': 'inconnu',
+            'health_profile': {'diseases': [], 'allergens': [], 'weight': 70},
+        })
+
+        assert response.status_code == 404
+
+    def test_analyse_plat_existant(self, client, seeded_db):
+        response = client.post('/api/analyze-dish', json={
+            'dish_id': 'd1',
+            'health_profile': {'diseases': [], 'allergens': [], 'weight': 70},
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['name'] == 'Thiéboudienne'
+        assert 0 <= data['score'] <= 100
+        assert data['alert_level'] in ('safe', 'caution', 'danger', 'critical')
+
+    def test_analyse_signale_l_allergene(self, client, seeded_db):
+        """Le Mafé contient de la pâte d'arachide (ingrédient i2)."""
+        response = client.post('/api/analyze-dish', json={
+            'dish_id': 'd2',
+            'health_profile': {'diseases': [], 'allergens': ['Arachides'],
+                               'weight': 70},
+        })
+
+        assert response.status_code == 200
+        alerts = response.json()['allergen_alerts']
+        assert [a['name'] for a in alerts] == ['Arachides']
+
+
+class TestAlternatives:
+    def test_plat_inexistant(self, client):
+        response = client.post('/api/alternatives/inconnu')
+
+        assert response.status_code == 404
+
+    def test_structure_de_la_reponse(self, client, seeded_db):
+        response = client.post('/api/alternatives/d1',
+                               params={'limit': 5})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['original_dish_id'] == 'd1'
+        assert data['original_dish_name'] == 'Thiéboudienne'
+        assert isinstance(data['alternatives'], list)
+
+    def test_aucune_alternative_avec_allergene(self, client, seeded_db):
+        """Régression : le Mafé (arachide) ne doit jamais être proposé à un
+        profil allergique, même si son score dépasse celui du plat d'origine."""
+        response = client.post('/api/alternatives/d1', json={
+            'diseases': [], 'allergens': ['Arachides'], 'weight': 70,
+        })
+
+        assert response.status_code == 200
+        proposed = {a['dish_name'] for a in response.json()['alternatives']}
+        assert 'Mafé cacahuète' not in proposed
+
+
+class TestRecommandations:
+    def test_utilisateur_inexistant(self, client):
+        response = client.get('/api/recommendations/inconnu')
+
+        assert response.status_code == 404
+
+
+class TestHealthProfiles:
+    def test_liste_des_maladies(self, client):
+        response = client.get('/api/health-profiles/diseases')
+
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+    def test_liste_des_allergenes(self, client):
+        response = client.get('/api/health-profiles/allergens')
+
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)

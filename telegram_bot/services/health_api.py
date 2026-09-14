@@ -1,4 +1,4 @@
-from config import settings
+from telegram_bot.config import settings
 import requests
 import logging
 
@@ -118,12 +118,6 @@ def get_dishes(meal_type: str = None, limit: int = 10):
 def get_dish_details(dish_id: str):
     """Détails d'un plat"""
     return call_api(f'/{dish_id}/dish_details', 'GET')
-
-def get_alternatives(dish_id: str, user_id: str):
-    """Obtient alternatives pour un plat"""
-    return call_api(f'/alternatives/{dish_id}', 'POST', {
-        'user_id': user_id
-    })
 
 def add_list_allergens_to_profile(user_id: str, allergens: list):
     """Ajoute une liste d'allergènes à un profil santé"""

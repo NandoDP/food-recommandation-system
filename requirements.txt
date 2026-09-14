@@ -32,6 +32,7 @@ python-telegram-bot==20.7
 
 # Text processing
 rapidfuzz==3.6.1
+spacy==3.7.5
 
 # Data visualization (for notebooks)
 matplotlib==3.8.2

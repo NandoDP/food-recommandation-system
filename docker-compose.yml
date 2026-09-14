@@ -53,7 +53,8 @@ services:
     container_name: nutrisenegal-bot
     environment:
       TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
-      API_BASE_URL: http://api:8000
+      # Les routes de l'API sont montées sous /api (voir api/router.py)
+      API_BASE_URL: http://api:8000/api
     depends_on:
       - api
     restart: unless-stopped

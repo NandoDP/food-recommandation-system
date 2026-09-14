@@ -237,15 +237,15 @@ class NutritionEngine:
                 scores.append(score)
             
             elif disease == DiseaseType.LIVER_DISEASE.value:
-                score = self._check_liver_disease(nutr, weight, dish_text, results)
+                score = self._check_liver_disease(dish_data, weight, dish_text, results)
                 scores.append(score)
             
             elif disease == DiseaseType.CANCER.value:
-                score = self._check_cancer(nutr, dish_text, results)
+                score = self._check_cancer(dish_data, dish_text, results)
                 scores.append(score)
             
             elif disease == DiseaseType.KIDNEY_DISEASE.value:
-                score = self._check_kidney_disease(nutr, dish_text, results)
+                score = self._check_kidney_disease(dish_data, dish_text, results)
                 scores.append(score)
         
         return sum(scores) / len(scores) if scores else 100.0

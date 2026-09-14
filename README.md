@@ -167,7 +167,7 @@ venv\Scripts\activate  # Windows
 pip install -r requirements.txt
 
 # 4. Télécharger modèle spaCy français
-python -m spacy download fr_core_news_md
+pip install https://github.com/explosion/spacy-models/releases/download/fr_core_news_sm-3.7.0/fr_core_news_sm-3.7.0-py3-none-any.whl
 
 # 5. Configurer variables d'environnement
 cp .env.example .env

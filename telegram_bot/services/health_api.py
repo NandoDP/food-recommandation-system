@@ -129,6 +129,10 @@ def add_list_allergens_to_profile(user_id: str, allergens: list):
     """Ajoute une liste d'allergènes à un profil santé"""
     return call_api(f'/health-profiles/{user_id}/list_allergens', 'POST', allergens)
 
+def add_list_diseases_to_profile(user_id: str, diseases: list):
+    """Ajoute une liste de maladies à un profil santé"""
+    return call_api(f'/health-profiles/{user_id}/list_diseases', 'POST', diseases)
+
 def delete_user_profile(user_id: str):
     """Supprime un profil santé"""
     return call_api(f'/users/{user_id}/health-profile', 'DELETE')

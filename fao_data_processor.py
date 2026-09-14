@@ -312,7 +312,7 @@ VALUES ('{food['id']}', '{name}', {f"'{scientific}'" if scientific else 'NULL'},
 if __name__ == "__main__":
     print("🍎 EXTRACTION TABLE FOODS (aliments de base WAFCT)\n")
     
-    excel_path = "C:/Users/maodo/Downloads/WAFCT_2019.xlsx"
+    excel_path = "data/WAFCT_2019.xlsx"
     
     extractor = WAFCTFoodsExtractor(excel_path)
     

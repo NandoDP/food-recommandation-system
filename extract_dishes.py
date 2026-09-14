@@ -443,7 +443,7 @@ VALUES ('{di['dish_id']}', '{di['ingredient_id']}', {qty}, '{di['unit']}');
 if __name__ == "__main__":
     print("🍲 EXTRACTION COMPLÈTE DISHES + INGREDIENTS + RELATIONS\n")
     
-    excel_path = "C:/Users/maodo/Downloads/WAFCT_2019.xlsx"
+    excel_path = "data/WAFCT_2019.xlsx"
     
     extractor = CompleteDishesExtractor(excel_path)
     
@@ -926,7 +926,7 @@ if __name__ == "__main__":
 # if __name__ == "__main__":
 #     print("🍲 EXTRACTION COMPLÈTE DES PLATS\n")
     
-#     extractor = WAFCTDishesExtractor("C:/Users/maodo/Downloads/WAFCT_2019.xlsx")
+#     extractor = WAFCTDishesExtractor("data/WAFCT_2019.xlsx")
     
 #     all_dishes = []
     

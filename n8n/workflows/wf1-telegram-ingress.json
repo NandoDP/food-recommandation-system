@@ -647,7 +647,7 @@
       "main": [
         [
           {
-            "node": "Texte : WF3 à brancher",
+            "node": "WF3 nlu-router",
             "type": "main",
             "index": 0
           }

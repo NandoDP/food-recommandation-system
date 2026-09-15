@@ -13,6 +13,7 @@ traite que de l'exploitation du service.
 | [`../Dockerfile.n8n`](../Dockerfile.n8n) | Image n8n 2.39.5 + binaire `ffmpeg` statique (conversion PCM → OGG/Opus pour `sendVoice`, phase 2) |
 | [`init-n8n-db.sql`](init-n8n-db.sql) | Crée la base `n8n` dans le PostgreSQL du projet |
 | `workflows/` | Workflows exportés en JSON, un fichier par workflow |
+| [`valider_workflows.py`](valider_workflows.py) | Contrôle de cohérence des workflows, à lancer avant chaque import |
 | [`../migrations/001_bot_tables.sql`](../migrations/001_bot_tables.sql) | Tables `bot_sessions`, `bot_processed_updates`, `bot_errors` |
 | [`../migrations/002_users_language_wolof.sql`](../migrations/002_users_language_wolof.sql) | Autorise `wo` dans `users.language` (onboarding trilingue) |
 | [`../migrations/003_dedoublonne_dishes.sql`](../migrations/003_dedoublonne_dishes.sql) | Un nom, un plat : dédoublonne `dishes` et pose l'index unique |
@@ -412,6 +413,7 @@ SELECT updated_at, last_lang, history
 ### Mise en route
 
 ```bash
+python n8n/valider_workflows.py          # sinon l'import rejette le lot entier (§8)
 docker compose exec -T n8n n8n import:workflow --separate --input=/workflows/
 docker compose exec -T n8n n8n publish:workflow --id=wf1-telegram-ingress
 docker compose exec -T n8n n8n publish:workflow --id=wf3-nlu-router
@@ -461,8 +463,30 @@ après chaque modification, et commiter :
 # Export (un fichier JSON par workflow)
 docker compose exec n8n n8n export:workflow --all --separate --output=/workflows
 
+# Contrôle avant import (voir plus bas pourquoi)
+python n8n/valider_workflows.py
+
 # Import (nouvelle machine, ou restauration)
 docker compose exec n8n n8n import:workflow --separate --input=/workflows
+```
+
+### Contrôler avant d'importer
+
+`n8n import:workflow` valide **tout le lot** avant d'en écrire un seul : une
+seule référence cassée et rien n'est importé, workflows sains compris. Le
+message ne nomme que le nœud fautif, pas le fichier.
+
+Le cas se produit à chaque fois qu'un nœud « X à brancher » cède la place au
+vrai sous-workflow : on renomme le nœud, et un Switch continue de citer
+l'ancien nom comme cible de connexion. `valider_workflows.py` vérifie les
+références de connexion, les noms en double, les nœuds isolés et les
+identifiants de sous-workflows appelés :
+
+```bash
+$ python n8n/valider_workflows.py
+ok      wf1-telegram-ingress.json : 22 noeuds
+ok      wf3-nlu-router.json : 25 noeuds
+ok      wf6-onboarding.json : 20 noeuds
 ```
 
 Les workflows importés arrivent **désactivés** : les réactiver dans l'éditeur.
@@ -482,6 +506,8 @@ Un export contient les nœuds et leurs paramètres, mais seulement les
 | Credentials illisibles après une remise à zéro | `N8N_ENCRYPTION_KEY` a changé : restaurer l'ancienne valeur ou recréer les credentials |
 | WF1 : `relation "bot_processed_updates" does not exist` | Migration `001_bot_tables.sql` non appliquée (§5) |
 | `Importing 0 workflows` | Chemin réécrit par Git Bash : voir l'encadré du §5 |
+| `Workflow structure is invalid … does not reference an existing node` | Un nœud a été renommé sans que les connexions qui le **visent** suivent. Aucun workflow n'est importé, même les sains : `python n8n/valider_workflows.py` nomme le fichier et le lien en cause (§8) |
+| `publish:workflow` → `Workflow "…" not found` | Le workflow n'a jamais été importé — le plus souvent parce que l'import a échoué sur un **autre** fichier du lot |
 | `Postgres <version> is not supported` au démarrage | n8n 2.x demande PostgreSQL 16 ou plus ; le compose est en 17 |
 | `password authentication failed for user "nutrisenegal"` | `DB_PASSWORD` a été modifié dans `.env` **après** la création du volume : `POSTGRES_PASSWORD` n'agit qu'à l'initialisation, le rôle garde l'ancien mot de passe. Réaligner sans perdre les données : `docker compose exec -T db psql -U nutrisenegal -d nutrisenegal_db -c "ALTER USER nutrisenegal WITH PASSWORD '<nouveau>';"` puis `docker compose up -d --force-recreate db api n8n` |
 | `Credential not configured` à la publication | Workflow importé avant la création des credentials : créer ceux du §3 avec les noms exacts, puis réimporter |

@@ -20,7 +20,8 @@ traite que de l'exploitation du service.
 
 | Workflow | Fichier | État |
 |---|---|---|
-| WF1 `telegram-ingress` | [`workflows/wf1-telegram-ingress.json`](workflows/wf1-telegram-ingress.json) | Point d'entrée complet ; appelle WF6, branches texte/vocal/callback en attente de WF3/WF2/WF7 |
+| WF1 `telegram-ingress` | [`workflows/wf1-telegram-ingress.json`](workflows/wf1-telegram-ingress.json) | Point d'entrée complet ; appelle WF6 et WF3, branches vocal/callback en attente de WF2/WF7 |
+| WF3 `nlu-router` | [`workflows/wf3-nlu-router.json`](workflows/wf3-nlu-router.json) | Intention + ingrédients par Gemini, appel de l'API, réponse ; à publier comme WF1 |
 | WF6 `onboarding` | [`workflows/wf6-onboarding.json`](workflows/wf6-onboarding.json) | Création de profil de bout en bout ; à publier comme WF1 |
 
 ---
@@ -116,13 +117,20 @@ réparer.
 | `Gemini NutriSénégal` | Google Gemini(PaLM) API | `GEMINI_API_KEY` |
 | `Postgres NutriSénégal` | Postgres | hôte `db` (**pas** `localhost` : depuis le conteneur n8n, `localhost` désigne n8n), base `nutrisenegal_db`, user `nutrisenegal`, mot de passe `DB_PASSWORD`, SSL `disable` |
 
-L'API FastAPI est appelée par des nœuds HTTP Request avec l'en-tête
-`X-API-Key: {{ $env.INTERNAL_API_KEY }}` sur `{{ $env.INTERNAL_API_BASE_URL }}`
-(soit `http://api:8000/api` depuis le réseau Docker) — pas de credential n8n
-dédié.
+L'API FastAPI est appelée par des nœuds HTTP Request sur
+`{{ $env.INTERNAL_API_BASE_URL }}` (soit `http://api:8000/api` depuis le réseau
+Docker) — pas de credential n8n dédié. Ceux de WF3 portent l'en-tête
+`X-API-Key: {{ $env.INTERNAL_API_KEY }}` ; ceux de WF6 sont antérieurs et ne
+l'envoient pas encore.
 
 > Le middleware qui **vérifie** cette clé côté FastAPI n'est pas encore écrit
-> (ARCHITECTURE_V2.md §6.2) : l'en-tête est envoyé, il est ignoré pour l'instant.
+> (ARCHITECTURE_V2.md §6.2) : l'en-tête est envoyé, il est ignoré pour
+> l'instant — d'où l'absence de conséquence pour WF6.
+
+Le credential `Gemini NutriSénégal` n'est utilisé par aucun workflow pour le
+moment : WF3 appelle l'API Gemini par un nœud HTTP Request, avec la clé lue
+dans `$env.GEMINI_API_KEY` et le modèle dans `$env.GEMINI_LLM_MODEL` (§4). Le
+créer quand même : WF2 et WF5 emploieront le nœud Gemini natif, qui l'exige.
 
 ---
 
@@ -150,8 +158,8 @@ Changer une de ces valeurs demande `docker compose up -d --force-recreate n8n`.
 
 Point d'entrée unique du bot (ARCHITECTURE_V2.md §5). Il normalise l'update
 Telegram, écarte les doublons, charge le profil et la session, puis route selon
-le type d'entrée. Les workflows d'aval n'existant pas encore, **chaque branche
-répond un message de diagnostic** : c'est ce qui rend WF1 testable seul.
+le type d'entrée. Les branches dont le workflow d'aval n'existe pas encore
+**répondent un message de diagnostic** : c'est ce qui les rend testables seules.
 
 ```
 Telegram Trigger
@@ -160,7 +168,7 @@ Telegram Trigger
         └─ Update déjà traité ? ─ non ─▶ Doublon ignoré
            └─ Charger le contexte   (crée/rafraîchit bot_sessions, puis users + health_profiles, 1 ligne garantie)
               └─ Utilisateur connu ? ─ non ─▶ [WF6 onboarding]
-                 └─ Type d'entrée ─┬─ texte    ─▶ [WF3 nlu-router]
+                 └─ Type d'entrée ─┬─ texte    ─▶ WF3 nlu-router (répond lui-même)
                                    ├─ vocal    ─▶ [WF2 speech-asr]
                                    ├─ callback ─▶ Accuser le callback ─▶ [WF7 profile]
                                    └─ non géré
@@ -209,7 +217,7 @@ Puis dans l'éditeur :
 
 | Envoi au bot de test | Réponse attendue |
 |---|---|
-| Un texte quelconque | Accusé listant `user_id`, `langue`, `session`, et le texte reçu |
+| Un texte quelconque | Passe la main à WF3 — voir sa recette au §7 |
 | Un message vocal | Accusé avec la durée et le `file_id`, mention de la phase 2 |
 | Une photo ou un sticker | « Ce type de message n'est pas encore géré » |
 | Depuis un compte sans profil | Message d'accueil renvoyant vers l'ancien bot |
@@ -326,7 +334,125 @@ suivants ne passent plus par WF6 mais par le routage texte / vocal / callback.
 
 ---
 
-## 7. Versionner les workflows
+## 7. WF3 `nlu-router`
+
+Le premier workflow qui *comprend* quelque chose. Un message texte entre, une
+intention et une liste d'ingrédients en sortent, l'API calcule, l'utilisateur
+reçoit une réponse (ARCHITECTURE_V2.md §4.2 et §5).
+
+```
+Execute Workflow Trigger      (enveloppe plate de WF1)
+  └─ Contexte NLU             (Code : prompt + responseSchema, 5 derniers tours)
+     └─ Gemini nlu-router     (HTTP : generateContent, JSON contraint, T=0.2)
+        └─ Lire la sortie NLU (Code : parse, seuil de confiance, décide du repli)
+           └─ NLU exploitable ? ─ non ─▶ Repli /analyze-menu ─────────────┐
+              └─ Plat nommé ? ─ oui ─▶ Chercher le plat ─▶ Retenir le plat│
+                 └─ non ─▶ Sans plat nommé                               │
+                    └─ Intention ─┬─ analyser ─▶ Plat en base ? ─ oui ─▶ Analyser le plat
+                                  │                └─ non ─▶ Analyser les ingrédients
+                                  ├─ recommander  ─▶ Recommandations
+                                  ├─ alternatives ─▶ Alternatives
+                                  ├─ détails      ─▶ Détails du plat
+                                  ├─ profil       ─▶ [WF7 à brancher]
+                                  └─ aide         ─▶ Aide (gabarit fixe)
+                                     └──────────────────────────────────┴─▶ Composer la réponse
+                                        └─ Enregistrer la session (history, last_lang)
+                                           └─ Répondre             ([WF4 reply-composer])
+```
+
+Comme WF6, **WF3 répond lui-même** : la branche texte de WF1 ne repasse plus
+par son nœud *Répondre*.
+
+### Ce que Gemini fait, et ce qu'il ne fait pas
+
+Il **classe** le message et en **extrait** les ingrédients, en sortie JSON
+contrainte (`responseSchema`, température 0.2). Il ne rédige rien, ne calcule
+rien, ne voit pas le profil santé : le score, les alertes et les conseils
+viennent de `nutrition_engine`, et c'est l'API qui applique le profil. Le
+nœud *Composer la réponse* ne fait que mettre en forme le JSON reçu — aucun
+chiffre n'y est recalculé (§7 de l'architecture). WF4 prendra ce rôle et
+traduira.
+
+Une règle du prompt mérite d'être connue : **le LLM n'invente pas de recette**.
+S'il reconnaît un plat, il renseigne `dish_name` et laisse `ingredients` vide ;
+c'est la base qui fournit la composition, via `GET /dishes?search=` puis
+`/analyze-dish`. Il n'extrait des ingrédients que si le message en cite.
+
+### Deux filets de sécurité
+
+**Repli hors ligne.** Gemini indisponible, ou confiance sous 0,6 sur une
+demande d'analyse : `POST /analyze-menu` reprend le texte brut avec spaCy et
+rapidfuzz, sans service externe (décision 4 du §11). Une salutation mal notée
+ne déclenche pas ce détour — elle devient « aide ».
+
+**Confirmation.** Repli, confiance basse, ou ingrédient non reconnu : la
+réponse se termine par une demande de reformulation, avec la liste de ce qui
+n'a pas été reconnu. Une analyse incomplète présentée comme complète est le
+pire résultat possible.
+
+### Les alias manquent encore
+
+`ingredients.aliases` (§6.1 de l'architecture) n'existe pas : le prompt ne
+reçoit **aucune liste fermée d'alias**, et le rapprochement côté API se fait au
+jugé sur les noms du référentiel WAFCT — qui ne nomme que des espèces
+(« Carpe, filet, cru »), jamais « poisson ». Le rapprochement est donc
+généreux et parfois à côté : `pain` tombe sur « Baobab, fruit/pain de singe »,
+`tomate` sur « Concentré de tomate ».
+
+`unmatched_ingredients` est là pour ça. C'est la matière première de la future
+table d'alias : relever ce que l'API n'a pas reconnu sur de vrais messages,
+puis poser les alias à partir de cette liste plutôt qu'en les devinant.
+
+```sql
+-- Ce que le bot n'a pas su rapprocher, tour par tour
+SELECT updated_at, last_lang, history
+  FROM bot_sessions ORDER BY updated_at DESC LIMIT 5;
+```
+
+### Mise en route
+
+```bash
+docker compose exec -T n8n n8n import:workflow --separate --input=/workflows/
+docker compose exec -T n8n n8n publish:workflow --id=wf1-telegram-ingress
+docker compose exec -T n8n n8n publish:workflow --id=wf3-nlu-router
+docker compose exec -T n8n n8n publish:workflow --id=wf6-onboarding
+docker compose restart n8n
+```
+
+`GEMINI_API_KEY` doit être renseignée dans `.env` **et** le conteneur recréé
+(`docker compose up -d --force-recreate n8n`) : la variable est lue à chaud par
+le nœud HTTP, mais elle n'entre dans l'environnement du conteneur qu'au
+démarrage. Sans elle, chaque message part en repli `/analyze-menu` — le bot
+répond quand même, ce qui rend la panne discrète : la vérifier d'abord.
+
+### Recette
+
+| Envoi au bot de test, depuis un compte avec profil | Réponse attendue |
+|---|---|
+| `bonjour` | Le message d'aide : les quatre choses que sait faire le bot |
+| `j'ai mangé du riz au poisson avec de l'huile` | Score sur 100, alertes selon le profil, conseils, et la liste des ingrédients reconnus / non reconnus |
+| `thiéboudienne` | Même analyse, mais la composition vient de la fiche en base, pas du message |
+| `thieboudienne` (sans accent) | Le même plat : `?search=` rapproche les graphies |
+| `qu'est-ce que je mange ce soir ?` | Des suggestions, `meal_type=dinner` |
+| `par quoi remplacer le thiéboudienne ?` | Des alternatives et des substitutions |
+| `c'est quoi le mafé ?` | La composition du plat |
+| `par quoi remplacer la pizza ?` | « Je ne connais pas « pizza » en base » — ces deux intentions exigent une fiche en base |
+| `je suis diabétique maintenant` | Renvoi vers l'ancien bot (WF7 pas encore branché) |
+| `azerty qwerty` | Demande de reformulation |
+
+```sql
+-- L'historique doit contenir les 5 derniers tours, user et bot alternés
+SELECT telegram_id, last_lang, jsonb_array_length(history) AS tours, updated_at
+  FROM bot_sessions ORDER BY updated_at DESC;
+```
+
+Pour voir ce que Gemini a réellement renvoyé, ouvrir l'exécution dans
+l'éditeur : le nœud *Lire la sortie NLU* expose `nlu` (intention, ingrédients,
+confiance) et `nlu_error` s'il y a eu un repli.
+
+---
+
+## 8. Versionner les workflows
 
 Le dossier `workflows/` est monté sur `/workflows` dans le conteneur. Exporter
 après chaque modification, et commiter :
@@ -345,7 +471,7 @@ Un export contient les nœuds et leurs paramètres, mais seulement les
 
 ---
 
-## 8. Dépannage
+## 9. Dépannage
 
 | Symptôme | Cause probable |
 |---|---|
@@ -365,3 +491,8 @@ Un export contient les nœuds et leurs paramètres, mais seulement les
 | `Bad Request: reply markup is too long` | Un clavier dépasse ~10 ko. Vérifier que les nœuds de référentiel sont bien en **Execute Once** : sinon ils tournent une fois par item reçu et multiplient les listes |
 | Un nœud renvoie N fois trop de données | Même cause : en n8n un nœud s'exécute une fois par item d'entrée. `Execute Once` dans les réglages du nœud |
 | WF1 : le bouton Telegram tourne indéfiniment | Le nœud *Accuser le callback* n'a pas été exécuté : vérifier la branche `callback` du Switch |
+| WF3 : chaque message part en repli `/analyze-menu` | `GEMINI_API_KEY` absente du conteneur, quota dépassé, ou `GEMINI_LLM_MODEL` inconnu. Le nœud *Lire la sortie NLU* affiche la cause dans `nlu_error` |
+| WF3 : une branche s'arrête sans réponse | Un nœud n8n ne s'exécute pas s'il reçoit **zéro item**. C'est pourquoi *Chercher le plat* est en « réponse complète » (une liste vide reste un item) et *Enregistrer la session* fait un `INSERT … RETURNING` plutôt qu'un `UPDATE` |
+| WF3 : l'analyse part sur un plat qui n'a pas été nommé | Un nœud Set écrit la chaîne `"null"`, que `Boolean()` juge vraie. `Sans plat nommé` est un nœud Code pour cette raison |
+| WF3 : `Aucun ingrédient reconnu parmi : …` | Normal tant que `ingredients.aliases` n'existe pas (§7). Relever ces noms : ce sont les alias à poser |
+| WF3 : réponse coupée ou caractères parasites | `parse_mode: Markdown` et un nom de plat contenant `_` ou `*`. Retirer le `parse_mode` du nœud *Répondre* le temps de vérifier |

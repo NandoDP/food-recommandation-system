@@ -291,28 +291,25 @@
     },
     {
       "id": "66ded9e6-bf62-433f-9a29-758f9d8ce4db",
-      "name": "Texte : WF3 à brancher",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
+      "name": "WF3 nlu-router",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
       "position": [
         1560,
         -180
       ],
       "parameters": {
-        "mode": "manual",
-        "includeOtherFields": true,
-        "assignments": {
-          "assignments": [
-            {
-              "id": "57b6c9ae-b120-4c8e-ad27-34a5ef98b83a",
-              "name": "reply_text",
-              "value": "=✅ Texte reçu, l’enveloppe WF1 est correcte.\n\n• utilisateur : {{ $json.user_first_name || 'inconnu' }} ({{ $json.user_id }})\n• langue : {{ $json.language }}\n• session : {{ $json.session_state }}\n• texte : {{ $json.text }}\n\nWF3 nlu-router n’est pas encore branché.",
-              "type": "string"
-            }
-          ]
+        "workflowId": {
+          "__rl": true,
+          "value": "wf3-nlu-router",
+          "mode": "list",
+          "cachedResultName": "WF3 nlu-router"
         },
-        "options": {}
-      }
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "notes": "WF3 répond lui-même à l'utilisateur : cette branche ne passe pas par le nœud Répondre."
     },
     {
       "id": "3fe32f21-516f-4453-846f-7695705cbb01",
@@ -522,7 +519,7 @@
       "parameters": {
         "width": 960,
         "height": 170,
-        "content": "## Branches\nUtilisateur inconnu → **WF6 onboarding**, qui répond lui-même à l’utilisateur.\nLes trois autres sorties répondent encore un message de diagnostic : à mesure que les workflows arrivent, remplacer le nœud Set par un **Execute Sub-workflow** — texte → WF3, vocal → WF2, callback → WF7. Le nœud *Répondre* cédera la place à WF4.",
+        "content": "## Branches\nUtilisateur inconnu → **WF6 onboarding**, message texte → **WF3 nlu-router** : ces deux-là répondent eux-mêmes à l’utilisateur et ne passent pas par le nœud *Répondre*.\nLes deux sorties restantes répondent encore un message de diagnostic : vocal → WF2, callback → WF7. Le nœud *Répondre* cédera la place à WF4.",
         "color": 3
       }
     },
@@ -683,17 +680,6 @@
         [
           {
             "node": "Callback : WF7 à brancher",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Texte : WF3 à brancher": {
-      "main": [
-        [
-          {
-            "node": "Répondre",
             "type": "main",
             "index": 0
           }

@@ -11,6 +11,7 @@ from api.core.nutrition_engine import NutritionEngine
 from api.core.menu_parser import WestAfricanMenuParser
 from api.core.nutrition_calculator import calculate_dish_nutrition_from_items
 from api.core import ingredient_resolver
+from rapidfuzz import fuzz
 from api.models.analyze import (
     DishAnalysisRequest, MenuAnalysisRequest,
     IngredientsAnalysisRequest, IngredientsAnalysisResponse,
@@ -304,11 +305,44 @@ def get_dish_details(dish_id: str, db: Session = Depends(db_instance.get_db)):
         'ingredients': ingredients
     }
 
+def filtrer_par_nom(query, terme: str, limit: int) -> List:
+    """Restreint une requete de plats a ceux dont le nom correspond a `terme`.
+
+    Deux passes. ILIKE d'abord : il suffit quand l'utilisateur ecrit le nom
+    comme la base. Rapprochement approchant ensuite, seul capable de relier
+    « thieboudienne » a « Thiéboudienne », ou une graphie approximative a son
+    entree. Meme normalisation et meme seuil que `ingredient_resolver` : les
+    deux chemins doivent rapprocher de la meme facon.
+    """
+    from api.schemas.analyze import Dish
+
+    lignes = (query.filter(Dish.name.ilike(f"%{terme}%"))
+                   .order_by(Dish.name)
+                   .limit(limit)
+                   .all())
+    if lignes:
+        return lignes
+
+    norme = ingredient_resolver.normaliser(terme)
+    if not norme:
+        return []
+
+    classees = []
+    for ligne in query.all():
+        score = fuzz.token_set_ratio(norme, ingredient_resolver.normaliser(ligne.name))
+        if score >= ingredient_resolver.SEUIL_APPROCHANT:
+            classees.append((score, ligne))
+
+    classees.sort(key=lambda paire: paire[0], reverse=True)
+    return [ligne for _, ligne in classees[:limit]]
+
+
 @router.get("/dishes")
 def list_dishes(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     meal_type: Optional[str] = Query(None, regex="^(breakfast|lunch|dinner)$"),
+    search: Optional[str] = Query(None, min_length=2, max_length=100),
     db: Session = Depends(db_instance.get_db)
 ):
     """
@@ -318,6 +352,7 @@ def list_dishes(
         limit: Nombre max de résultats (défaut: 20)
         offset: Décalage pour pagination (défaut: 0)
         meal_type: Filtrer par type de repas (optionnel)
+        search: Nom de plat à retrouver (optionnel, ARCHITECTURE_V2.md §6.2)
     
     Returns:
         Liste de plats avec nombre d'ingrédients
@@ -348,9 +383,12 @@ def list_dishes(
     if meal_type:
         query = query.filter(Dish.meal_type == meal_type)
     
-    # Pagination
-    # Prendre 10 plats au hasard pour diversité
-    dishes = query.order_by(func.random()).limit(limit).offset(offset).all()
+    if search:
+        dishes = filtrer_par_nom(query, search, limit)
+    else:
+        # Pagination
+        # Prendre 10 plats au hasard pour diversité
+        dishes = query.order_by(func.random()).limit(limit).offset(offset).all()
     
     # Convertir en DishResponse
     return [

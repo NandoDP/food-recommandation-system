@@ -1,0 +1,745 @@
+{
+  "id": "wf1-telegram-ingress",
+  "name": "WF1 telegram-ingress",
+  "active": false,
+  "nodes": [
+    {
+      "id": "3471f6de-b1ef-4564-ad6f-ef2a36518790",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        -460,
+        300
+      ],
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": null,
+          "name": "Telegram NutriSénégal (test)"
+        }
+      },
+      "webhookId": "148c5a87-559c-4c62-8dbc-ebb099a99659",
+      "notes": "Webhook HTTPS : PUBLIC_HTTPS_URL doit pointer sur n8n (n8n/README.md §2)"
+    },
+    {
+      "id": "01a127f5-107b-4516-af39-c67955be5aff",
+      "name": "Normaliser l’update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Aplatit l'update Telegram en une enveloppe stable, consommee par tous les\n// workflows en aval (WF2, WF3, WF6, WF7). Le format Telegram ne doit pas\n// fuiter plus loin que ce noeud.\nconst sortie = [];\n\nfor (const item of $input.all()) {\n  const u = item.json;\n  const msg = u.message ?? u.edited_message ?? null;\n  const cb = u.callback_query ?? null;\n  const from = cb?.from ?? msg?.from ?? {};\n  const chat = cb?.message?.chat ?? msg?.chat ?? {};\n\n  let kind = 'other';\n  let text = null;\n  let file_id = null;\n  let callback_data = null;\n\n  if (cb) {\n    kind = 'callback';\n    callback_data = cb.data ?? null;\n  } else if (msg?.voice) {\n    kind = 'voice';\n    file_id = msg.voice.file_id;\n  } else if (msg?.audio) {\n    kind = 'voice';\n    file_id = msg.audio.file_id;\n  } else if (msg?.text) {\n    kind = 'text';\n    text = msg.text;\n  }\n\n  sortie.push({\n    json: {\n      update_id: u.update_id,\n      kind,\n      // Dans ce projet l'identifiant Telegram est aussi users.id\n      telegram_id: String(from.id ?? ''),\n      chat_id: chat.id ?? from.id ?? null,\n      message_id: cb?.message?.message_id ?? msg?.message_id ?? null,\n      callback_query_id: cb?.id ?? null,\n      text,\n      file_id,\n      duration: msg?.voice?.duration ?? msg?.audio?.duration ?? null,\n      callback_data,\n      // Prefixes attendus : action_, dish_, alt_, disease_, allergen_, meal_\n      callback_prefix: callback_data ? String(callback_data).split('_')[0] + '_' : null,\n      telegram_first_name: from.first_name ?? null,\n      telegram_last_name: from.last_name ?? null,\n      telegram_language: from.language_code ?? null,\n      received_at: new Date().toISOString(),\n    },\n  });\n}\n\nreturn sortie;\n"
+      }
+    },
+    {
+      "id": "00f539e4-880f-401c-9af3-e6a4443f983e",
+      "name": "Marquer l’update",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        -20,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH nouveau AS (\n  INSERT INTO bot_processed_updates (update_id)\n  VALUES ($1)\n  ON CONFLICT (update_id) DO NOTHING\n  RETURNING update_id\n)\nSELECT EXISTS (SELECT 1 FROM nouveau) AS is_new;",
+        "options": {
+          "queryReplacement": "={{ [ $json.update_id ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Postgres NutriSénégal"
+        }
+      },
+      "notes": "Telegram rejoue les updates non acquittes : sans ce garde-fou une analyse (et sa facturation LLM) serait relancee."
+    },
+    {
+      "id": "22697b17-ec1d-45ef-bb77-473f6c7208ad",
+      "name": "Recoller l’enveloppe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Le noeud Postgres remplace l'item par le resultat de la requete :\n// on recolle l'enveloppe pour garder un objet plat en aval.\nconst enveloppe = $('Normaliser l’update').first().json;\nconst resultat = $input.first().json;\n\nreturn [{ json: { ...enveloppe, is_new: resultat.is_new === true } }];\n"
+      }
+    },
+    {
+      "id": "71146dc4-b674-4d23-8136-05772a3d81b3",
+      "name": "Update déjà traité ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d014dc55-1e42-4421-9674-02b31ad031b5",
+              "leftValue": "={{ $json.is_new }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "917cd8a0-ee03-403a-b7d5-73337b9ed969",
+      "name": "Doublon ignoré",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        640,
+        460
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "6d3c0738-81b7-47b5-b55b-b9d2efb1af3f",
+      "name": "Charger le contexte",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        640,
+        140
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Garantit l'existence de la session et memorise le chat_id,\n-- puis renvoie profil + session en une seule ligne.\nWITH s AS (\n  INSERT INTO bot_sessions (telegram_id, chat_id)\n  VALUES ($1, $2)\n  ON CONFLICT (telegram_id) DO UPDATE\n    SET chat_id = EXCLUDED.chat_id, updated_at = CURRENT_TIMESTAMP\n  RETURNING telegram_id, state, draft, history, last_lang\n)\nSELECT\n  u.id           AS user_id,\n  u.first_name   AS user_first_name,\n  u.language     AS user_language,\n  hp.id          AS health_profile_id,\n  s.state        AS session_state,\n  s.draft        AS session_draft,\n  s.history      AS session_history,\n  s.last_lang    AS session_last_lang\nFROM (SELECT $1::text AS telegram_id) k\nLEFT JOIN users u ON u.id = k.telegram_id\nLEFT JOIN LATERAL (\n  SELECT id FROM health_profiles WHERE user_id = u.id LIMIT 1\n) hp ON true\nLEFT JOIN s ON s.telegram_id = k.telegram_id;",
+        "options": {
+          "queryReplacement": "={{ [ $json.telegram_id, $json.chat_id ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Postgres NutriSénégal"
+        }
+      },
+      "notes": "Renvoie toujours une ligne : NULL sur les colonnes users/health_profiles si l'utilisateur est inconnu."
+    },
+    {
+      "id": "08643511-9c2b-4445-9401-9c7a65dd952e",
+      "name": "Fusionner le contexte",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        140
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Enveloppe + profil + session dans un seul objet plat.\nconst enveloppe = $('Normaliser l’update').first().json;\nconst contexte = $input.first().json;\n\nconst langue = contexte.user_language\n  || contexte.session_last_lang\n  || (['fr', 'wo', 'en'].includes(enveloppe.telegram_language) ? enveloppe.telegram_language : 'fr');\n\nreturn [{\n  json: {\n    ...enveloppe,\n    ...contexte,\n    is_known_user: Boolean(contexte.user_id),\n    session_state: contexte.session_state ?? 'IDLE',\n    language: langue,\n  },\n}];\n"
+      }
+    },
+    {
+      "id": "41e0dc6b-87e4-48fe-b042-bb1f527d5e71",
+      "name": "Utilisateur connu ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1080,
+        140
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6f40999c-4198-4f81-a6e1-9c791d41df40",
+              "leftValue": "={{ $json.is_known_user }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "bf63317d-9b98-4d3b-8b30-c3d6c298a712",
+      "name": "Type d’entrée",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1300,
+        20
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "00bd0345-c36d-4d37-b82b-e8cf10c1b224",
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "texte"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "674a9349-deff-4306-8ce5-7fec35d88ef3",
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "voice",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "vocal"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "8a2fae48-ec55-4c10-96b1-3fede6e05634",
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "callback",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "callback"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "non géré"
+        }
+      }
+    },
+    {
+      "id": "66ded9e6-bf62-433f-9a29-758f9d8ce4db",
+      "name": "WF3 nlu-router",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1560,
+        -180
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "wf3-nlu-router",
+          "mode": "list",
+          "cachedResultName": "WF3 nlu-router"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "notes": "WF3 répond lui-même à l'utilisateur : cette branche ne passe pas par le nœud Répondre."
+    },
+    {
+      "id": "3fe32f21-516f-4453-846f-7695705cbb01",
+      "name": "Vocal : WF2 à brancher",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1560,
+        -20
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a958e065-165a-4331-99fb-d1d73e855071",
+              "name": "reply_text",
+              "value": "=🎧 Vocal reçu ({{ $json.duration }} s), file_id {{ $json.file_id }}.\n\nLa transcription (WF2 speech-asr) arrive en phase 2 de la migration.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "73ac7897-d535-43e6-9ffa-7fb234ad4c6a",
+      "name": "Accuser le callback",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1560,
+        140
+      ],
+      "parameters": {
+        "resource": "callback",
+        "operation": "answerQuery",
+        "queryId": "={{ $json.callback_query_id }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": null,
+          "name": "Telegram NutriSénégal (test)"
+        }
+      },
+      "notes": "Sans reponse a la callback query, le bouton reste en chargement cote Telegram."
+    },
+    {
+      "id": "f26336d1-2593-4e0f-9633-e382cab5802b",
+      "name": "Callback : WF7 à brancher",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1780,
+        140
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "92b995ab-8663-47e2-8b9c-4ce8b81b3429",
+              "name": "reply_text",
+              "value": "=🔘 Bouton « {{ $json.callback_data }} » (préfixe {{ $json.callback_prefix }}).\n\nLe routage vers WF7 profile-management n’est pas encore branché.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "060a369c-3af4-4a4e-acaa-0a6941b621e4",
+      "name": "Type non géré",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1560,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9cb6dccc-d699-4fc6-bde1-40e80528b7ad",
+              "name": "reply_text",
+              "value": "=Ce type de message n’est pas encore géré (photo, sticker, document…).\nEnvoie-moi du texte pour l’instant.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "526eec47-1b83-4311-9ea9-bccaeaaaa8cd",
+      "name": "WF6 onboarding",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1300,
+        320
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "wf6-onboarding",
+          "mode": "list",
+          "cachedResultName": "WF6 onboarding"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "notes": "WF6 répond lui-même à l'utilisateur : cette branche ne passe pas par le nœud Répondre."
+    },
+    {
+      "id": "a956bc59-df03-45f6-a2ba-a1373f4c2186",
+      "name": "Répondre",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2060,
+        60
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": null,
+          "name": "Telegram NutriSénégal (test)"
+        }
+      },
+      "notes": "Sortie provisoire : remplacee par WF4 reply-composer quand il existera."
+    },
+    {
+      "id": "56c7728a-2dd4-4966-8239-b0cca8c5c8eb",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        720
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "7ecdf351-9506-40b3-a62c-86a3ab81f3b4",
+      "name": "Journaliser l’erreur",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        -240,
+        720
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO bot_errors (workflow, node, message, execution_url, payload)\nVALUES ($1, $2, $3, $4, $5::jsonb);",
+        "options": {
+          "queryReplacement": "={{ [ $json.workflow?.name ?? 'telegram-ingress', $json.execution?.lastNodeExecuted ?? null, $json.execution?.error?.message ?? 'erreur inconnue', $json.execution?.url ?? null, JSON.stringify($json) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Postgres NutriSénégal"
+        }
+      }
+    },
+    {
+      "id": "d726f6ae-8adf-4c79-9789-b4fb3a740de5",
+      "name": "Note ingress",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -500,
+        40
+      ],
+      "parameters": {
+        "width": 1120,
+        "height": 200,
+        "content": "## WF1 telegram-ingress\nPoint d’entrée unique du bot (ARCHITECTURE_V2.md §5).\n\nDéclencheur → normalisation → idempotence → contexte utilisateur → routage.\nTout ce qui suit consomme une **enveloppe plate** : `kind`, `telegram_id`, `chat_id`, `text`, `file_id`, `callback_data`, `language`, `session_state`.",
+        "color": 4
+      }
+    },
+    {
+      "id": "6648169a-5a2f-4742-b264-432fbb76fbf1",
+      "name": "Note branches",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        -340
+      ],
+      "parameters": {
+        "width": 960,
+        "height": 170,
+        "content": "## Branches\nUtilisateur inconnu → **WF6 onboarding**, message texte → **WF3 nlu-router** : ces deux-là répondent eux-mêmes à l’utilisateur et ne passent pas par le nœud *Répondre*.\nLes deux sorties restantes répondent encore un message de diagnostic : vocal → WF2, callback → WF7. Le nœud *Répondre* cédera la place à WF4.",
+        "color": 3
+      }
+    },
+    {
+      "id": "8dad3cf7-b3ff-4c83-a8cc-c8e4d3a14447",
+      "name": "Note erreurs",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -500,
+        600
+      ],
+      "parameters": {
+        "width": 760,
+        "height": 260,
+        "content": "## Gestion d’erreur (§5.5)\nPour que cette branche se déclenche : **Settings → Error Workflow → WF1 telegram-ingress** sur ce workflow.\n\nL’Error Trigger ne reçoit pas les données de l’exécution fautive : il ne sait pas **quel** utilisateur a échoué et ne peut donc pas lui envoyer d’excuse. L’erreur est journalisée dans `bot_errors`.\n\nPour répondre à l’utilisateur, traiter l’erreur dans le flux principal : *réglages du nœud → On Error → Continue (using error output)*, la branche d’erreur conserve alors le `chat_id`.",
+        "color": 3
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normaliser l’update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliser l’update": {
+      "main": [
+        [
+          {
+            "node": "Marquer l’update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marquer l’update": {
+      "main": [
+        [
+          {
+            "node": "Recoller l’enveloppe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recoller l’enveloppe": {
+      "main": [
+        [
+          {
+            "node": "Update déjà traité ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update déjà traité ?": {
+      "main": [
+        [
+          {
+            "node": "Charger le contexte",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Doublon ignoré",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Charger le contexte": {
+      "main": [
+        [
+          {
+            "node": "Fusionner le contexte",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fusionner le contexte": {
+      "main": [
+        [
+          {
+            "node": "Utilisateur connu ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Utilisateur connu ?": {
+      "main": [
+        [
+          {
+            "node": "Type d’entrée",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WF6 onboarding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Type d’entrée": {
+      "main": [
+        [
+          {
+            "node": "WF3 nlu-router",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Vocal : WF2 à brancher",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Accuser le callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Type non géré",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accuser le callback": {
+      "main": [
+        [
+          {
+            "node": "Callback : WF7 à brancher",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vocal : WF2 à brancher": {
+      "main": [
+        [
+          {
+            "node": "Répondre",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback : WF7 à brancher": {
+      "main": [
+        [
+          {
+            "node": "Répondre",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Type non géré": {
+      "main": [
+        [
+          {
+            "node": "Répondre",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Journaliser l’erreur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Dakar",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "tags": [],
+  "meta": {
+    "description": "Point d'entree Telegram - architecture v2, phase 1"
+  }
+}

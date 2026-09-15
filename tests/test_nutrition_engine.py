@@ -316,3 +316,50 @@ class TestEquilibreNutritionnel:
 
         assert result['detailed_breakdown']['nutrition_score'] < 100
         assert any('grasses' in r.lower() for r in result['recommendations'])
+
+
+class TestNutrimentInconnu:
+    """Le calculateur pose la clé à `None` quand l'information manque — aucun
+    aliment du plat n'a d'index glycémique connu, par exemple.
+
+    `nutr.get(cle, defaut)` ne protège que d'une clé absente : la comparaison
+    qui suivait échouait en `TypeError`, et l'analyse entière avec elle. Le cas
+    se produit sur de vrais ingrédients du référentiel WAFCT, dont beaucoup
+    n'ont pas d'IG renseigné.
+    """
+
+    @pytest.mark.parametrize('nutriment', [
+        'glycemic_index', 'carbohydrate_g', 'fiber_g',
+        'sodium_mg', 'potassium_mg', 'protein_g', 'fat_g',
+    ])
+    @pytest.mark.parametrize('maladie', [d.value for d in DiseaseType])
+    def test_analyse_aboutit_malgre_un_nutriment_nul(self, nutriment, maladie):
+        resultat = NutritionEngine().analyze(
+            dish(**{nutriment: None}),
+            profile(diseases=[maladie]),
+        )
+
+        assert 0 <= resultat['score'] <= 100
+
+    def test_tous_les_nutriments_nuls(self):
+        """Le pire cas : un aliment dont on ne sait rien."""
+        vides = {c: None for c in ('energy_kcal', 'protein_g', 'fat_g',
+                                   'carbohydrate_g', 'fiber_g', 'sodium_mg',
+                                   'potassium_mg', 'glycemic_index')}
+        resultat = NutritionEngine().analyze(
+            dish(**vides),
+            profile(diseases=[d.value for d in DiseaseType]),
+        )
+
+        assert 0 <= resultat['score'] <= 100
+
+    def test_le_defaut_applique_est_celui_de_la_regle(self):
+        """IG inconnu vaut 60 : au-dessus du seuil « bas » (55), en dessous du
+        seuil « modéré » (70). Ni alerte, ni faux sentiment de sécurité."""
+        resultat = NutritionEngine().analyze(
+            dish(glycemic_index=None),
+            profile(diseases=[DiseaseType.DIABETES.value]),
+        )
+
+        alertes_ig = [a for a in resultat['disease_alerts'] if 'IG' in a['message']]
+        assert alertes_ig == []

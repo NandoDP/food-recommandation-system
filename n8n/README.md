@@ -1,0 +1,524 @@
+# Service n8n — orchestration conversationnelle
+
+Ce dossier contient tout ce qui accompagne le conteneur `n8n` défini dans
+[`docker-compose.yml`](../docker-compose.yml) : le script de création de sa
+base, et les workflows exportés et versionnés.
+
+La cible, les workflows nœud par nœud et le plan de migration sont décrits dans
+[`ARCHITECTURE_V2.md`](../ARCHITECTURE_V2.md) (§5, §8 et §9). Ce README ne
+traite que de l'exploitation du service.
+
+| Fichier | Rôle |
+|---|---|
+| [`../Dockerfile.n8n`](../Dockerfile.n8n) | Image n8n 2.39.5 + binaire `ffmpeg` statique (conversion PCM → OGG/Opus pour `sendVoice`, phase 2) |
+| [`init-n8n-db.sql`](init-n8n-db.sql) | Crée la base `n8n` dans le PostgreSQL du projet |
+| `workflows/` | Workflows exportés en JSON, un fichier par workflow |
+| [`valider_workflows.py`](valider_workflows.py) | Contrôle de cohérence des workflows, à lancer avant chaque import |
+| [`../migrations/001_bot_tables.sql`](../migrations/001_bot_tables.sql) | Tables `bot_sessions`, `bot_processed_updates`, `bot_errors` |
+| [`../migrations/002_users_language_wolof.sql`](../migrations/002_users_language_wolof.sql) | Autorise `wo` dans `users.language` (onboarding trilingue) |
+| [`../migrations/003_dedoublonne_dishes.sql`](../migrations/003_dedoublonne_dishes.sql) | Un nom, un plat : dédoublonne `dishes` et pose l'index unique |
+| [`../migrations/copie_referentiel.py`](../migrations/copie_referentiel.py) | Recopie `foods` / `ingredients` / `dishes` d'une base à l'autre |
+
+| Workflow | Fichier | État |
+|---|---|---|
+| WF1 `telegram-ingress` | [`workflows/wf1-telegram-ingress.json`](workflows/wf1-telegram-ingress.json) | Point d'entrée complet ; appelle WF6 et WF3, branches vocal/callback en attente de WF2/WF7 |
+| WF3 `nlu-router` | [`workflows/wf3-nlu-router.json`](workflows/wf3-nlu-router.json) | Intention + ingrédients par Gemini, appel de l'API, réponse ; à publier comme WF1 |
+| WF6 `onboarding` | [`workflows/wf6-onboarding.json`](workflows/wf6-onboarding.json) | Création de profil de bout en bout ; à publier comme WF1 |
+
+---
+
+## 1. Premier démarrage
+
+```bash
+# 1. Renseigner les variables de la section N8N du .env
+#    (voir .env.example : N8N_ENCRYPTION_KEY, INTERNAL_API_KEY, GEMINI_API_KEY…)
+python -c "import secrets; print(secrets.token_urlsafe(32))"   # une clé par variable
+
+# 2. Construire l'image (n8n + ffmpeg) et démarrer
+docker compose build n8n
+docker compose up -d db api n8n
+
+# 3. Vérifier
+docker compose ps n8n
+curl -sf http://localhost:5678/healthz
+```
+
+L'éditeur est sur <http://localhost:5678>. Au premier accès, n8n demande de
+créer le compte propriétaire : ces identifiants sont locaux à l'instance, ils
+ne sont ni dans le dépôt ni dans le `.env`.
+
+**Si le volume `postgres_data` existait déjà**, le script
+`init-n8n-db.sql` n'a pas été exécuté (les scripts de
+`/docker-entrypoint-initdb.d/` ne tournent que sur un volume neuf). Créer la
+base à la main, sinon `n8n` redémarre en boucle :
+
+```bash
+docker compose exec db psql -U nutrisenegal -d nutrisenegal_db \
+  -c "CREATE DATABASE n8n OWNER nutrisenegal;"
+docker compose restart n8n
+```
+
+---
+
+## 2. Exposer le webhook Telegram en HTTPS
+
+Contrairement à l'ancien bot Python qui faisait du *long polling*, n8n reçoit
+les updates par webhook : Telegram exige une URL **HTTPS publique**.
+
+### En développement — cloudflared
+
+```bash
+cloudflared tunnel --url http://localhost:5678
+# -> https://xxx-yyy-zzz.trycloudflare.com
+```
+
+Reporter cette URL dans `.env` puis recréer le conteneur (n8n construit l'URL
+de webhook au démarrage, un `restart` ne suffit pas si la variable a changé) :
+
+```bash
+# .env
+PUBLIC_HTTPS_URL=https://xxx-yyy-zzz.trycloudflare.com
+
+docker compose up -d --force-recreate n8n
+```
+
+L'URL d'un tunnel gratuit change à chaque lancement : il faut refaire cette
+étape, et réactiver le workflow `telegram-ingress` pour que n8n réenregistre
+le webhook auprès de Telegram.
+
+### En production
+
+Reverse proxy TLS (nginx, Caddy, Traefik) devant `n8n:5678`, `PUBLIC_HTTPS_URL`
+fixé au domaine, `N8N_PROXY_HOPS` égal au nombre de proxies traversés, et
+`N8N_SECURE_COOKIE` remis à `true` dans le compose (il est à `false` pour
+permettre la connexion en HTTP sur `localhost`).
+
+### Vérifier l'enregistrement côté Telegram
+
+```bash
+curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
+```
+
+---
+
+## 3. Credentials à créer dans l'éditeur
+
+Les credentials sont chiffrés avec `N8N_ENCRYPTION_KEY` et stockés dans la base
+`n8n` : ils ne sont **jamais** versionnés dans `workflows/`. À créer une fois
+depuis l'interface, **avant d'importer les workflows** : l'import rattache les
+nœuds à un credential par son nom, et ne peut le faire que si celui-ci existe
+déjà. Les noms ci-dessous sont donc à respecter à la lettre — sinon les nœuds
+arrivent sans credential et la publication échoue sur
+« *Credential not configured* ». Renommer le credential et réimporter suffit à
+réparer.
+
+| Credential | Type n8n | Valeur |
+|---|---|---|
+| `Telegram NutriSénégal (test)` | Telegram API | `TELEGRAM_TOKEN_N8N` — bot de test de la phase 1 |
+| `Gemini NutriSénégal` | Google Gemini(PaLM) API | `GEMINI_API_KEY` |
+| `Postgres NutriSénégal` | Postgres | hôte `db` (**pas** `localhost` : depuis le conteneur n8n, `localhost` désigne n8n), base `nutrisenegal_db`, user `nutrisenegal`, mot de passe `DB_PASSWORD`, SSL `disable` |
+
+L'API FastAPI est appelée par des nœuds HTTP Request sur
+`{{ $env.INTERNAL_API_BASE_URL }}` (soit `http://api:8000/api` depuis le réseau
+Docker) — pas de credential n8n dédié. Ceux de WF3 portent l'en-tête
+`X-API-Key: {{ $env.INTERNAL_API_KEY }}` ; ceux de WF6 sont antérieurs et ne
+l'envoient pas encore.
+
+> Le middleware qui **vérifie** cette clé côté FastAPI n'est pas encore écrit
+> (ARCHITECTURE_V2.md §6.2) : l'en-tête est envoyé, il est ignoré pour
+> l'instant — d'où l'absence de conséquence pour WF6.
+
+Le credential `Gemini NutriSénégal` n'est utilisé par aucun workflow pour le
+moment : WF3 appelle l'API Gemini par un nœud HTTP Request, avec la clé lue
+dans `$env.GEMINI_API_KEY` et le modèle dans `$env.GEMINI_LLM_MODEL` (§4). Le
+créer quand même : WF2 et WF5 emploieront le nœud Gemini natif, qui l'exige.
+
+---
+
+## 4. Variables d'environnement lisibles dans les workflows
+
+`N8N_BLOCK_ENV_ACCESS_IN_NODE=false` autorise `{{ $env.NOM }}` dans les nœuds.
+Les identifiants de modèles ne sont donc jamais écrits en dur (les modèles TTS
+sont en preview et seront renommés — ARCHITECTURE_V2.md §4.4) :
+
+| Variable | Défaut | Usage |
+|---|---|---|
+| `INTERNAL_API_BASE_URL` | `http://api:8000/api` | Base des nœuds HTTP Request vers FastAPI |
+| `INTERNAL_API_KEY` | — | En-tête `X-API-Key` |
+| `GEMINI_API_KEY` | — | Credential Gemini (à recopier dans l'éditeur) |
+| `GEMINI_LLM_MODEL` | `gemini-3.8-flash` | WF3 `nlu-router`, WF4 `reply-composer` |
+| `GEMINI_ASR_MODEL` | `gemini-3.5-transcribe` | WF2 `speech-asr`, branches fr/en |
+| `GEMINI_TTS_MODEL` | `gemini-2.5-flash-preview-tts` | WF5 `speech-tts` |
+| `TELEGRAM_TOKEN_N8N` | — | Bot de test de la phase 1 |
+
+Changer une de ces valeurs demande `docker compose up -d --force-recreate n8n`.
+
+---
+
+## 5. WF1 `telegram-ingress`
+
+Point d'entrée unique du bot (ARCHITECTURE_V2.md §5). Il normalise l'update
+Telegram, écarte les doublons, charge le profil et la session, puis route selon
+le type d'entrée. Les branches dont le workflow d'aval n'existe pas encore
+**répondent un message de diagnostic** : c'est ce qui les rend testables seules.
+
+```
+Telegram Trigger
+  └─ Normaliser l'update        (Code : enveloppe plate, le format Telegram s'arrête ici)
+     └─ Marquer l'update        (Postgres : INSERT ... ON CONFLICT DO NOTHING)
+        └─ Update déjà traité ? ─ non ─▶ Doublon ignoré
+           └─ Charger le contexte   (crée/rafraîchit bot_sessions, puis users + health_profiles, 1 ligne garantie)
+              └─ Utilisateur connu ? ─ non ─▶ [WF6 onboarding]
+                 └─ Type d'entrée ─┬─ texte    ─▶ WF3 nlu-router (répond lui-même)
+                                   ├─ vocal    ─▶ [WF2 speech-asr]
+                                   ├─ callback ─▶ Accuser le callback ─▶ [WF7 profile]
+                                   └─ non géré
+                                      └──────────▶ Répondre  ([WF4 reply-composer])
+```
+
+L'enveloppe produite par le nœud `Normaliser l'update` est le contrat que tous
+les workflows suivants consomment : `kind` (`text` / `voice` / `callback` /
+`other`), `telegram_id`, `chat_id`, `message_id`, `text`, `file_id`,
+`duration`, `callback_data`, `callback_prefix`, `callback_query_id`, puis
+`user_id`, `language` et `session_state` après chargement du contexte.
+
+> Dans ce projet, l'identifiant Telegram **est** `users.id` (TEXT) : le bot
+> Python enregistre `str(update.effective_user.id)`. `bot_sessions.telegram_id`
+> suit la même convention.
+
+### Mise en route
+
+```bash
+# 1. Tables de support (idempotent)
+docker compose exec -T db psql -U nutrisenegal -d nutrisenegal_db   < migrations/001_bot_tables.sql
+
+# 2. Import du workflow
+docker compose exec -T n8n n8n import:workflow --separate --input=/workflows/
+
+# 3. Redémarrer pour que l'éditeur voie le workflow importé
+docker compose restart n8n
+```
+
+> **Sous Git Bash (Windows)**, préfixer les commandes contenant un chemin
+> absolu du conteneur par `MSYS_NO_PATHCONV=1` : sinon `/workflows/` est
+> réécrit en `C:/Program Files/Git/workflows/` et l'import annonce
+> tranquillement « 0 workflows ». PowerShell et Linux ne sont pas concernés.
+
+Puis dans l'éditeur :
+
+1. Ouvrir **WF1 telegram-ingress** et vérifier que les trois nœuds Postgres et
+   les deux nœuds Telegram pointent bien sur les credentials créés au §3
+   (l'import les rattache par nom, mais il faut le confirmer).
+2. **Settings → Error Workflow → WF1 telegram-ingress** pour activer la branche
+   `Error Trigger` (§5.5 de l'architecture).
+3. Activer le workflow (bascule **Active**). C'est ce geste qui enregistre le
+   webhook auprès de Telegram : sans `PUBLIC_HTTPS_URL` valide, il échoue.
+
+### Recette
+
+| Envoi au bot de test | Réponse attendue |
+|---|---|
+| Un texte quelconque | Passe la main à WF3 — voir sa recette au §7 |
+| Un message vocal | Accusé avec la durée et le `file_id`, mention de la phase 2 |
+| Une photo ou un sticker | « Ce type de message n'est pas encore géré » |
+| Depuis un compte sans profil | Message d'accueil renvoyant vers l'ancien bot |
+| Le même `update_id` rejoué | Aucune réponse, exécution arrêtée sur `Doublon ignoré` |
+| N'importe lequel des envois ci-dessus | Une ligne apparaît dans `bot_sessions` avec le `chat_id` |
+
+```sql
+-- Vérifications en base après quelques messages
+SELECT * FROM bot_processed_updates ORDER BY received_at DESC LIMIT 5;
+SELECT telegram_id, chat_id, state, updated_at FROM bot_sessions;
+SELECT occurred_at, node, message FROM bot_errors ORDER BY occurred_at DESC LIMIT 5;
+```
+
+Le nœud *Charger le contexte* crée la session au passage (`INSERT ... ON
+CONFLICT DO UPDATE` dans une CTE) : `bot_sessions` est donc alimentée dès le
+premier message, avant même l'inscription de l'utilisateur, ce dont WF6
+onboarding aura besoin.
+
+> **Prérequis** : la table `users` doit exister. `script.sql` la déclare avec
+> `CREATE OR REPLACE TABLE`, syntaxe que PostgreSQL refuse — si la base a été
+> initialisée uniquement par ce script, le nœud *Charger le contexte* échouera
+> sur `relation "users" does not exist`.
+
+---
+
+## 6. WF6 `onboarding`
+
+Remplace le `ConversationHandler` du bot Python. Appelé par WF1 dès qu'un
+message arrive d'un compte sans profil, il mène la conversation jusqu'à la
+création du profil santé :
+
+```
+IDLE → ASK_LANGUAGE → ASK_NAME → ASK_WEIGHT → ASK_DISEASES → ASK_ALLERGENS → DONE
+```
+
+L'état ne vit pas en mémoire mais dans `bot_sessions.state` et `.draft` : n8n
+peut redémarrer au milieu d'un onboarding sans que l'utilisateur perde sa
+progression. Les listes de maladies et d'allergènes sont lues sur
+`/api/health-profiles/diseases` et `/allergens` — les UUID codés en dur de
+`keyboads.py` disparaissent.
+
+Trois choix de construction :
+
+- **Toute la décision tient dans un nœud Code**, `Machine à états` : fonction
+  pure, elle ne lit ni n'écrit rien, elle renvoie l'état suivant, le brouillon
+  et le message Telegram à émettre. Les nœuds qui suivent exécutent. C'est ce
+  qui rend l'enchaînement rejouable hors n8n et testable sans Telegram.
+- **Les appels Telegram passent par des nœuds HTTP Request**, pas par le nœud
+  Telegram : les claviers sont construits à partir des listes de l'API, et le
+  nœud Telegram ne sait pas produire un clavier dynamique. Le token vient de
+  `$env.TELEGRAM_TOKEN_N8N`.
+- **Les deux nœuds de référentiel sont en « Execute Once »** : un nœud n8n
+  s'exécute une fois **par item reçu**. Sans ce réglage, le nœud des allergènes
+  reçoit les 5 maladies du nœud précédent, appelle l'API 5 fois et renvoie 110
+  allergènes — le clavier dépasse alors la limite de ~10 ko de `reply_markup`
+  et Telegram répond `Bad Request: reply markup is too long`.
+- **La finalisation tolère le rejeu** : `register` et la création du profil
+  acceptent un 400 « existe déjà », l'identifiant de profil est relu plutôt que
+  déduit de la réponse de création, et `list_diseases` / `list_allergens`
+  remplacent la sélection entière. Un utilisateur qui relance `/start` puis
+  retermine ne crée pas de doublon.
+
+> Le token apparaît dans l'URL des appels, donc dans les données d'exécution
+> conservées par n8n. C'est acceptable pour le bot de test ; à revoir avant
+> d'utiliser le token de production.
+
+### Mise en route
+
+```bash
+# La langue wolof doit être acceptée par la base, sinon le choix « Wolof »
+# fait échouer POST /api/users/register
+docker compose exec -T db psql -U nutrisenegal -d nutrisenegal_db   < migrations/002_users_language_wolof.sql
+
+docker compose exec -T n8n n8n import:workflow --separate --input=/workflows/
+docker compose restart n8n
+```
+
+L'import **désactive tous les workflows importés**. Il faut republier les deux,
+puis redémarrer : sinon WF1 n'a plus de webhook enregistré, et WF6 — même
+appelé par WF1 et non déclenché directement — refuse de s'exécuter avec
+`Workflow is not active and cannot be executed`. En n8n 2.x, un sous-workflow
+doit être publié pour être appelable.
+
+```bash
+docker compose exec -T n8n n8n publish:workflow --id=wf1-telegram-ingress
+docker compose exec -T n8n n8n publish:workflow --id=wf6-onboarding
+docker compose restart n8n
+curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
+```
+
+### Recette
+
+| Envoi au bot de test, depuis un compte sans profil | Réponse attendue |
+|---|---|
+| `/start` | Message d'accueil et trois boutons de langue |
+| Bouton « Français » | Le message est **édité** (pas de nouveau message) et demande le nom |
+| Un prénom, ou le bouton « Utiliser … » | Demande le poids |
+| `abc` puis `800` | Deux refus, la question du poids reste posée |
+| `72,4` | Clavier des 5 maladies, avec « Aucune » et « Valider » |
+| Cocher / décocher | Le clavier se met à jour, la case bascule |
+| Valider | Clavier des 22 allergènes (24 boutons, ~2,3 ko) |
+| Terminer | Récapitulatif, et le profil existe en base |
+
+```sql
+SELECT state, draft FROM bot_sessions WHERE telegram_id = '<ton id>';
+SELECT id, first_name, weight, language FROM users;
+SELECT hp.id, array_agg(d.name) FROM health_profiles hp
+  LEFT JOIN health_profile_diseases hpd ON hpd.health_profile_id = hp.id
+  LEFT JOIN diseases d ON d.id = hpd.disease_id GROUP BY hp.id;
+```
+
+Une fois le profil créé, `is_known_user` devient vrai dans WF1 : les messages
+suivants ne passent plus par WF6 mais par le routage texte / vocal / callback.
+
+---
+
+## 7. WF3 `nlu-router`
+
+Le premier workflow qui *comprend* quelque chose. Un message texte entre, une
+intention et une liste d'ingrédients en sortent, l'API calcule, l'utilisateur
+reçoit une réponse (ARCHITECTURE_V2.md §4.2 et §5).
+
+```
+Execute Workflow Trigger      (enveloppe plate de WF1)
+  └─ Contexte NLU             (Code : prompt + responseSchema, 5 derniers tours)
+     └─ Gemini nlu-router     (HTTP : generateContent, JSON contraint, T=0.2)
+        └─ Lire la sortie NLU (Code : parse, seuil de confiance, décide du repli)
+           └─ NLU exploitable ? ─ non ─▶ Repli /analyze-menu ─────────────┐
+              └─ Plat nommé ? ─ oui ─▶ Chercher le plat ─▶ Retenir le plat│
+                 └─ non ─▶ Sans plat nommé                               │
+                    └─ Intention ─┬─ analyser ─▶ Plat en base ? ─ oui ─▶ Analyser le plat
+                                  │                └─ non ─▶ Analyser les ingrédients
+                                  ├─ recommander  ─▶ Recommandations
+                                  ├─ alternatives ─▶ Alternatives
+                                  ├─ détails      ─▶ Détails du plat
+                                  ├─ profil       ─▶ [WF7 à brancher]
+                                  └─ aide         ─▶ Aide (gabarit fixe)
+                                     └──────────────────────────────────┴─▶ Composer la réponse
+                                        └─ Enregistrer la session (history, last_lang)
+                                           └─ Répondre             ([WF4 reply-composer])
+```
+
+Comme WF6, **WF3 répond lui-même** : la branche texte de WF1 ne repasse plus
+par son nœud *Répondre*.
+
+### Ce que Gemini fait, et ce qu'il ne fait pas
+
+Il **classe** le message et en **extrait** les ingrédients, en sortie JSON
+contrainte (`responseSchema`, température 0.2). Il ne rédige rien, ne calcule
+rien, ne voit pas le profil santé : le score, les alertes et les conseils
+viennent de `nutrition_engine`, et c'est l'API qui applique le profil. Le
+nœud *Composer la réponse* ne fait que mettre en forme le JSON reçu — aucun
+chiffre n'y est recalculé (§7 de l'architecture). WF4 prendra ce rôle et
+traduira.
+
+Une règle du prompt mérite d'être connue : **le LLM n'invente pas de recette**.
+S'il reconnaît un plat, il renseigne `dish_name` et laisse `ingredients` vide ;
+c'est la base qui fournit la composition, via `GET /dishes?search=` puis
+`/analyze-dish`. Il n'extrait des ingrédients que si le message en cite.
+
+### Deux filets de sécurité
+
+**Repli hors ligne.** Gemini indisponible, ou confiance sous 0,6 sur une
+demande d'analyse : `POST /analyze-menu` reprend le texte brut avec spaCy et
+rapidfuzz, sans service externe (décision 4 du §11). Une salutation mal notée
+ne déclenche pas ce détour — elle devient « aide ».
+
+**Confirmation.** Repli, confiance basse, ou ingrédient non reconnu : la
+réponse se termine par une demande de reformulation, avec la liste de ce qui
+n'a pas été reconnu. Une analyse incomplète présentée comme complète est le
+pire résultat possible.
+
+### Les alias manquent encore
+
+`ingredients.aliases` (§6.1 de l'architecture) n'existe pas : le prompt ne
+reçoit **aucune liste fermée d'alias**, et le rapprochement côté API se fait au
+jugé sur les noms du référentiel WAFCT — qui ne nomme que des espèces
+(« Carpe, filet, cru »), jamais « poisson ». Le rapprochement est donc
+généreux et parfois à côté : `pain` tombe sur « Baobab, fruit/pain de singe »,
+`tomate` sur « Concentré de tomate ».
+
+`unmatched_ingredients` est là pour ça. C'est la matière première de la future
+table d'alias : relever ce que l'API n'a pas reconnu sur de vrais messages,
+puis poser les alias à partir de cette liste plutôt qu'en les devinant.
+
+```sql
+-- Ce que le bot n'a pas su rapprocher, tour par tour
+SELECT updated_at, last_lang, history
+  FROM bot_sessions ORDER BY updated_at DESC LIMIT 5;
+```
+
+### Mise en route
+
+```bash
+python n8n/valider_workflows.py          # sinon l'import rejette le lot entier (§8)
+docker compose exec -T n8n n8n import:workflow --separate --input=/workflows/
+docker compose exec -T n8n n8n publish:workflow --id=wf1-telegram-ingress
+docker compose exec -T n8n n8n publish:workflow --id=wf3-nlu-router
+docker compose exec -T n8n n8n publish:workflow --id=wf6-onboarding
+docker compose restart n8n
+```
+
+`GEMINI_API_KEY` doit être renseignée dans `.env` **et** le conteneur recréé
+(`docker compose up -d --force-recreate n8n`) : la variable est lue à chaud par
+le nœud HTTP, mais elle n'entre dans l'environnement du conteneur qu'au
+démarrage. Sans elle, chaque message part en repli `/analyze-menu` — le bot
+répond quand même, ce qui rend la panne discrète : la vérifier d'abord.
+
+### Recette
+
+| Envoi au bot de test, depuis un compte avec profil | Réponse attendue |
+|---|---|
+| `bonjour` | Le message d'aide : les quatre choses que sait faire le bot |
+| `j'ai mangé du riz au poisson avec de l'huile` | Score sur 100, alertes selon le profil, conseils, et la liste des ingrédients reconnus / non reconnus |
+| `thiéboudienne` | Même analyse, mais la composition vient de la fiche en base, pas du message |
+| `thieboudienne` (sans accent) | Le même plat : `?search=` rapproche les graphies |
+| `qu'est-ce que je mange ce soir ?` | Des suggestions, `meal_type=dinner` |
+| `par quoi remplacer le thiéboudienne ?` | Des alternatives et des substitutions |
+| `c'est quoi le mafé ?` | La composition du plat |
+| `par quoi remplacer la pizza ?` | « Je ne connais pas « pizza » en base » — ces deux intentions exigent une fiche en base |
+| `je suis diabétique maintenant` | Renvoi vers l'ancien bot (WF7 pas encore branché) |
+| `azerty qwerty` | Demande de reformulation |
+
+```sql
+-- L'historique doit contenir les 5 derniers tours, user et bot alternés
+SELECT telegram_id, last_lang, jsonb_array_length(history) AS tours, updated_at
+  FROM bot_sessions ORDER BY updated_at DESC;
+```
+
+Pour voir ce que Gemini a réellement renvoyé, ouvrir l'exécution dans
+l'éditeur : le nœud *Lire la sortie NLU* expose `nlu` (intention, ingrédients,
+confiance) et `nlu_error` s'il y a eu un repli.
+
+---
+
+## 8. Versionner les workflows
+
+Le dossier `workflows/` est monté sur `/workflows` dans le conteneur. Exporter
+après chaque modification, et commiter :
+
+```bash
+# Export (un fichier JSON par workflow)
+docker compose exec n8n n8n export:workflow --all --separate --output=/workflows
+
+# Contrôle avant import (voir plus bas pourquoi)
+python n8n/valider_workflows.py
+
+# Import (nouvelle machine, ou restauration)
+docker compose exec n8n n8n import:workflow --separate --input=/workflows
+```
+
+### Contrôler avant d'importer
+
+`n8n import:workflow` valide **tout le lot** avant d'en écrire un seul : une
+seule référence cassée et rien n'est importé, workflows sains compris. Le
+message ne nomme que le nœud fautif, pas le fichier.
+
+Le cas se produit à chaque fois qu'un nœud « X à brancher » cède la place au
+vrai sous-workflow : on renomme le nœud, et un Switch continue de citer
+l'ancien nom comme cible de connexion. `valider_workflows.py` vérifie les
+références de connexion, les noms en double, les nœuds isolés et les
+identifiants de sous-workflows appelés :
+
+```bash
+$ python n8n/valider_workflows.py
+ok      wf1-telegram-ingress.json : 22 noeuds
+ok      wf3-nlu-router.json : 25 noeuds
+ok      wf6-onboarding.json : 20 noeuds
+```
+
+Les workflows importés arrivent **désactivés** : les réactiver dans l'éditeur.
+Un export contient les nœuds et leurs paramètres, mais seulement les
+*références* aux credentials, pas leur contenu.
+
+---
+
+## 9. Dépannage
+
+| Symptôme | Cause probable |
+|---|---|
+| `n8n` redémarre en boucle, log `database "n8n" does not exist` | Volume Postgres préexistant : créer la base à la main (§1) |
+| Connexion à l'éditeur qui retombe sur l'écran de login | Cookie de session rejeté en HTTP : vérifier `N8N_SECURE_COOKIE=false` |
+| Telegram ne déclenche rien | `PUBLIC_HTTPS_URL` périmée, ou workflow inactif : vérifier `getWebhookInfo` (§2) |
+| `$env.X` vide dans un nœud | Variable absente du service `n8n` du compose, ou conteneur non recréé |
+| Credentials illisibles après une remise à zéro | `N8N_ENCRYPTION_KEY` a changé : restaurer l'ancienne valeur ou recréer les credentials |
+| WF1 : `relation "bot_processed_updates" does not exist` | Migration `001_bot_tables.sql` non appliquée (§5) |
+| `Importing 0 workflows` | Chemin réécrit par Git Bash : voir l'encadré du §5 |
+| `Workflow structure is invalid … does not reference an existing node` | Un nœud a été renommé sans que les connexions qui le **visent** suivent. Aucun workflow n'est importé, même les sains : `python n8n/valider_workflows.py` nomme le fichier et le lien en cause (§8) |
+| `publish:workflow` → `Workflow "…" not found` | Le workflow n'a jamais été importé — le plus souvent parce que l'import a échoué sur un **autre** fichier du lot |
+| `Postgres <version> is not supported` au démarrage | n8n 2.x demande PostgreSQL 16 ou plus ; le compose est en 17 |
+| `password authentication failed for user "nutrisenegal"` | `DB_PASSWORD` a été modifié dans `.env` **après** la création du volume : `POSTGRES_PASSWORD` n'agit qu'à l'initialisation, le rôle garde l'ancien mot de passe. Réaligner sans perdre les données : `docker compose exec -T db psql -U nutrisenegal -d nutrisenegal_db -c "ALTER USER nutrisenegal WITH PASSWORD '<nouveau>';"` puis `docker compose up -d --force-recreate db api n8n` |
+| `Credential not configured` à la publication | Workflow importé avant la création des credentials : créer ceux du §3 avec les noms exacts, puis réimporter |
+| Le bot ne répond plus après un import | L'import désactive les workflows : republier WF1 **et** WF6, puis redémarrer n8n (§6) |
+| `Workflow is not active and cannot be executed` | Le sous-workflow appelé n'est pas publié : `n8n publish:workflow --id=wf6-onboarding` |
+| WF6 : `violates check constraint "users_language_check"` | Migration `002_users_language_wolof.sql` non appliquée |
+| `Bad Request: reply markup is too long` | Un clavier dépasse ~10 ko. Vérifier que les nœuds de référentiel sont bien en **Execute Once** : sinon ils tournent une fois par item reçu et multiplient les listes |
+| Un nœud renvoie N fois trop de données | Même cause : en n8n un nœud s'exécute une fois par item d'entrée. `Execute Once` dans les réglages du nœud |
+| WF1 : le bouton Telegram tourne indéfiniment | Le nœud *Accuser le callback* n'a pas été exécuté : vérifier la branche `callback` du Switch |
+| WF3 : chaque message part en repli `/analyze-menu` | `GEMINI_API_KEY` absente du conteneur, quota dépassé, ou `GEMINI_LLM_MODEL` inconnu. Le nœud *Lire la sortie NLU* affiche la cause dans `nlu_error` |
+| WF3 : une branche s'arrête sans réponse | Un nœud n8n ne s'exécute pas s'il reçoit **zéro item**. C'est pourquoi *Chercher le plat* est en « réponse complète » (une liste vide reste un item) et *Enregistrer la session* fait un `INSERT … RETURNING` plutôt qu'un `UPDATE` |
+| WF3 : l'analyse part sur un plat qui n'a pas été nommé | Un nœud Set écrit la chaîne `"null"`, que `Boolean()` juge vraie. `Sans plat nommé` est un nœud Code pour cette raison |
+| WF3 : `Aucun ingrédient reconnu parmi : …` | Normal tant que `ingredients.aliases` n'existe pas (§7). Relever ces noms : ce sont les alias à poser |
+| WF3 : réponse coupée ou caractères parasites | `parse_mode: Markdown` et un nom de plat contenant `_` ou `*`. Retirer le `parse_mode` du nœud *Répondre* le temps de vérifier |

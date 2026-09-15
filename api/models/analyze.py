@@ -49,6 +49,32 @@ class MenuAnalysisRequest(BaseModel):
     user_id: Optional[str] = None
     health_profile: Optional[Dict] = None
 
+
+class IngredientInput(BaseModel):
+    """Un ingrédient déjà extrait et normalisé en français par le LLM."""
+    name: str
+    quantity: Optional[float] = None
+    unit: Optional[str] = None
+
+
+class IngredientsAnalysisRequest(BaseModel):
+    """Entrée de /analyze-ingredients : plus de texte libre à analyser."""
+    ingredients: List[IngredientInput]
+    user_id: Optional[str] = None
+    dish_name: Optional[str] = None
+    health_profile: Optional[Dict] = None
+
+
+class IngredientsAnalysisResponse(AnalysisResponse):
+    """Même analyse, plus le détail de ce qui a été reconnu.
+
+    `unmatched_ingredients` est ce qui permet au bot de demander confirmation
+    plutôt que de rendre une analyse silencieusement incomplète
+    (ARCHITECTURE_V2.md §7).
+    """
+    matched_ingredients: List[str] = []
+    unmatched_ingredients: List[str] = []
+
 class DishResponse(BaseModel):
     id: str
     name: str

@@ -1,0 +1,578 @@
+{
+  "id": "wf6-onboarding",
+  "name": "WF6 onboarding",
+  "active": false,
+  "nodes": [
+    {
+      "id": "5a0d89c5-9c2b-445c-9065-27f944f0d3f8",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -680,
+        300
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "notes": "Reçoit l'enveloppe plate de WF1 (kind, text, callback_data, session_state, session_draft…)"
+    },
+    {
+      "id": "f5d0591f-5ef8-4feb-9ea8-8eb592ec8680",
+      "name": "Bouton pressé ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -460,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f8937f2d-cf6b-4368-a1db-ef9d6c494b64",
+              "leftValue": "={{ $json.kind }}",
+              "rightValue": "callback",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0ae07256-cec5-4bf4-826c-2467f791f304",
+      "name": "Accuser le bouton",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -240,
+        180
+      ],
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_TOKEN_N8N }}/answerCallbackQuery",
+        "options": {},
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ callback_query_id: $json.callback_query_id }) }}"
+      },
+      "notes": "Sans cet appel, le bouton tourne indéfiniment côté Telegram."
+    },
+    {
+      "id": "cd41c95e-50a2-4128-9890-c39849501815",
+      "name": "Référentiel maladies",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -20,
+        300
+      ],
+      "parameters": {
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/health-profiles/diseases",
+        "options": {}
+      },
+      "notes": "Fin des UUID codés en dur : la liste vient de l'API (ARCHITECTURE_V2 §5, WF6).",
+      "executeOnce": true
+    },
+    {
+      "id": "39dbb650-b0f9-458c-8a6b-473a33a8b98c",
+      "name": "Référentiel allergènes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/health-profiles/allergens",
+        "options": {}
+      },
+      "notes": "« Exécuter une seule fois » est indispensable : ce nœud reçoit les 5 maladies du nœud précédent et appellerait l'API 5 fois, soit 110 allergènes et un clavier au-dessus de la limite Telegram de 10 ko.",
+      "executeOnce": true
+    },
+    {
+      "id": "4998721b-00e8-4cdc-9430-4716bdd3b6c0",
+      "name": "Machine à états",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Machine à états de l'onboarding (WF6).\n//\n// Fonction pure : (enveloppe WF1, référentiels API) -> (état suivant, brouillon,\n// appel Telegram à émettre). Aucun effet de bord ici — les nœuds qui suivent\n// écrivent en base, appellent l'API et envoient le message.\n//\n// États : IDLE -> ASK_LANGUAGE -> ASK_NAME -> ASK_WEIGHT -> ASK_DISEASES\n//         -> ASK_ALLERGENS -> DONE\n\nconst enveloppe = $('Execute Workflow Trigger').first().json;\nconst maladies = $('Référentiel maladies').all().map((i) => i.json);\nconst allergenes = $('Référentiel allergènes').all().map((i) => i.json);\n\n// ---------------------------------------------------------------- utilitaires\n\nfunction echapper(v) {\n  return String(v ?? '')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;');\n}\n\nfunction clavierLangue() {\n  return {\n    inline_keyboard: [\n      [\n        { text: '🇸🇳 Wolof', callback_data: 'onb_lang_wo' },\n        { text: '🇫🇷 Français', callback_data: 'onb_lang_fr' },\n        { text: '🇬🇧 English', callback_data: 'onb_lang_en' },\n      ],\n    ],\n  };\n}\n\n// Clavier à cases à cocher : 2 colonnes, puis « aucune » et « valider ».\nfunction clavierSelection(items, selection, prefixe, libelleAucune, libelleValider) {\n  const lignes = [];\n  for (let i = 0; i < items.length; i += 2) {\n    lignes.push(\n      items.slice(i, i + 2).map((item) => ({\n        text: (selection.includes(item.id) ? '☑️ ' : '▫️ ') + item.name,\n        callback_data: `${prefixe}_${item.id}`,\n      })),\n    );\n  }\n  lignes.push([{ text: libelleAucune, callback_data: `${prefixe}_none` }]);\n  lignes.push([{ text: libelleValider, callback_data: `${prefixe}_ok` }]);\n  return { inline_keyboard: lignes };\n}\n\nfunction bascule(selection, id) {\n  return selection.includes(id) ? selection.filter((x) => x !== id) : [...selection, id];\n}\n\nfunction noms(liste, ids) {\n  const trouves = liste.filter((x) => ids.includes(x.id)).map((x) => x.name);\n  return trouves.length ? trouves.join(', ') : 'aucune';\n}\n\n// ------------------------------------------------------------------- contexte\n\nconst etat = enveloppe.session_state || 'IDLE';\nconst brouillon = { ...(enveloppe.session_draft || {}) };\nbrouillon.diseases = brouillon.diseases || [];\nbrouillon.allergens = brouillon.allergens || [];\n\nconst texte = (enveloppe.text || '').trim();\nconst bouton = enveloppe.callback_data || null;\nconst estBouton = enveloppe.kind === 'callback';\n\n// Une réponse : le message Telegram à émettre. On édite le message existant\n// quand l'utilisateur vient d'appuyer sur un bouton, sinon on en envoie un neuf.\nfunction reponse(etatSuivant, corps, options = {}) {\n  const editer = estBouton && enveloppe.message_id && options.editer !== false;\n  return [{\n    json: {\n      telegram_id: enveloppe.telegram_id,\n      chat_id: enveloppe.chat_id,\n      callback_query_id: enveloppe.callback_query_id,\n      is_callback: estBouton,\n      state: etatSuivant,\n      draft: brouillon,\n      language: brouillon.language || enveloppe.language || 'fr',\n      finalize: options.finalize === true,\n      telegram_method: editer ? 'editMessageText' : 'sendMessage',\n      telegram_body: {\n        chat_id: enveloppe.chat_id,\n        ...(editer ? { message_id: enveloppe.message_id } : {}),\n        text: corps.text,\n        parse_mode: 'HTML',\n        ...(corps.reply_markup ? { reply_markup: corps.reply_markup } : {}),\n      },\n    },\n  }];\n}\n\n// --------------------------------------------------------------- les questions\n\nfunction demanderLangue() {\n  const prenom = echapper(enveloppe.telegram_first_name || '');\n  return reponse('ASK_LANGUAGE', {\n    text:\n      `🌟 <b>Dalal ak jamm ${prenom} !</b>\\n` +\n      `<b>Bienvenue sur NutriSénégal.</b>\\n\\n` +\n      `Je vérifie si un plat convient à ta santé : allergènes, maladies chroniques, ` +\n      `et des alternatives plus adaptées.\\n\\n` +\n      `Commençons par créer ton profil.\\n\\n` +\n      `🗣 <b>Quelle langue préfères-tu ?</b>\\n` +\n      `<i>Ban làkk nga gën a bëgg ? / Which language do you prefer?</i>`,\n    reply_markup: clavierLangue(),\n  });\n}\n\nfunction demanderNom(etatSuivant = 'ASK_NAME') {\n  const suggestion = [enveloppe.telegram_first_name, enveloppe.telegram_last_name]\n    .filter(Boolean)\n    .join(' ');\n  const clavier = suggestion\n    ? { inline_keyboard: [[{ text: `Utiliser « ${suggestion} »`, callback_data: 'onb_name_telegram' }]] }\n    : null;\n  return reponse(etatSuivant, {\n    text:\n      `📝 <b>Comment dois-je t'appeler ?</b>\\n\\n` +\n      `Écris ton prénom, ou prénom et nom.\\n` +\n      `<i>Exemple : Awa Diop</i>`,\n    reply_markup: clavier,\n  });\n}\n\nfunction demanderPoids(etatSuivant = 'ASK_WEIGHT') {\n  return reponse(etatSuivant, {\n    text:\n      `Enchanté ${echapper(brouillon.first_name)} ! 😊\\n\\n` +\n      `⚖️ <b>Quel est ton poids en kilos ?</b>\\n` +\n      `Il sert à calculer les portions et les besoins nutritionnels.\\n\\n` +\n      `<i>Exemple : 72</i>`,\n    reply_markup: { inline_keyboard: [[{ text: 'Passer cette question', callback_data: 'onb_weight_skip' }]] },\n  });\n}\n\nfunction demanderMaladies(etatSuivant = 'ASK_DISEASES') {\n  return reponse(etatSuivant, {\n    text:\n      `🏥 <b>As-tu une maladie chronique ?</b>\\n\\n` +\n      `Coche tout ce qui s'applique, puis valide.\\n` +\n      `C'est ce qui rend l'analyse des plats pertinente.`,\n    reply_markup: clavierSelection(\n      maladies,\n      brouillon.diseases,\n      'onb_dis',\n      '🚫 Aucune maladie',\n      '✅ Valider',\n    ),\n  });\n}\n\nfunction demanderAllergenes(etatSuivant = 'ASK_ALLERGENS') {\n  return reponse(etatSuivant, {\n    text:\n      `🚫 <b>As-tu des allergies alimentaires ?</b>\\n\\n` +\n      `Coche tout ce qui s'applique, puis valide.\\n` +\n      `Les plats contenant ces allergènes seront écartés.`,\n    reply_markup: clavierSelection(\n      allergenes,\n      brouillon.allergens,\n      'onb_all',\n      '🚫 Aucune allergie',\n      '✅ Terminer',\n    ),\n  });\n}\n\n// ------------------------------------------------------------------ transitions\n\n// /start relance toujours l'onboarding depuis le début\nif (texte === '/start' || texte === '/restart') {\n  brouillon.diseases = [];\n  brouillon.allergens = [];\n  return demanderLangue();\n}\n\nswitch (etat) {\n  case 'ASK_LANGUAGE': {\n    if (bouton && bouton.startsWith('onb_lang_')) {\n      brouillon.language = bouton.slice('onb_lang_'.length);\n      return demanderNom();\n    }\n    return demanderLangue();\n  }\n\n  case 'ASK_NAME': {\n    let complet = null;\n    if (bouton === 'onb_name_telegram') {\n      complet = [enveloppe.telegram_first_name, enveloppe.telegram_last_name].filter(Boolean).join(' ');\n    } else if (texte.length >= 2) {\n      complet = texte;\n    }\n    if (!complet) {\n      return reponse('ASK_NAME', {\n        text: `⚠️ Je n'ai pas compris. Écris ton prénom (2 lettres au minimum).`,\n      });\n    }\n    const morceaux = complet.split(/\\s+/);\n    brouillon.first_name = morceaux[0];\n    brouillon.last_name = morceaux.slice(1).join(' ');\n    return demanderPoids();\n  }\n\n  case 'ASK_WEIGHT': {\n    if (bouton === 'onb_weight_skip') {\n      brouillon.weight = null;\n      return demanderMaladies();\n    }\n    const poids = Number.parseFloat(texte.replace(',', '.'));\n    if (!Number.isFinite(poids) || poids < 30 || poids > 300) {\n      return reponse('ASK_WEIGHT', {\n        text: `⚠️ Un poids entre 30 et 300 kg, en chiffres.\\n<i>Exemple : 72</i>`,\n      });\n    }\n    brouillon.weight = Math.round(poids);\n    return demanderMaladies();\n  }\n\n  case 'ASK_DISEASES': {\n    if (bouton === 'onb_dis_ok') return demanderAllergenes();\n    if (bouton === 'onb_dis_none') {\n      brouillon.diseases = [];\n      return demanderMaladies();\n    }\n    if (bouton && bouton.startsWith('onb_dis_')) {\n      brouillon.diseases = bascule(brouillon.diseases, bouton.slice('onb_dis_'.length));\n      return demanderMaladies();\n    }\n    return demanderMaladies();\n  }\n\n  case 'ASK_ALLERGENS': {\n    if (bouton === 'onb_all_ok') {\n      // Le récapitulatif est écrit après les appels API, par le nœud suivant\n      return reponse('DONE', { text: '⏳ Je crée ton profil…' }, { finalize: true });\n    }\n    if (bouton === 'onb_all_none') {\n      brouillon.allergens = [];\n      return demanderAllergenes();\n    }\n    if (bouton && bouton.startsWith('onb_all_')) {\n      brouillon.allergens = bascule(brouillon.allergens, bouton.slice('onb_all_'.length));\n      return demanderAllergenes();\n    }\n    return demanderAllergenes();\n  }\n\n  case 'DONE': {\n    return reponse('DONE', {\n      text:\n        `Ton profil existe déjà.\\n` +\n        `🏥 ${echapper(noms(maladies, brouillon.diseases))}\\n` +\n        `🚫 ${echapper(noms(allergenes, brouillon.allergens))}`,\n    });\n  }\n\n  default:\n    return demanderLangue();\n}\n"
+      },
+      "notes": "Fonction pure : enveloppe + référentiels -> état suivant, brouillon, message Telegram à émettre."
+    },
+    {
+      "id": "7a3335e8-9483-4375-93f9-7d9d34bd6e8c",
+      "name": "Finaliser ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "424fc9e1-616b-4d48-a382-fda0a01e13cf",
+              "leftValue": "={{ $json.finalize }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "388b5455-5d96-4949-b99b-61fb1894557f",
+      "name": "Inscrire l’utilisateur",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        160
+      ],
+      "parameters": {
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/users/register",
+        "options": {},
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $('Machine à états').first().json.telegram_id, first_name: $('Machine à états').first().json.draft.first_name, last_name: $('Machine à états').first().json.draft.last_name || '', weight: $('Machine à états').first().json.draft.weight, language: $('Machine à états').first().json.draft.language || 'fr' }) }}"
+      },
+      "notes": "Tolère un 400 « already registered » : l'utilisateur peut relancer /start après coup.",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "79592a46-8da9-4fb5-a304-3f28c190bfd6",
+      "name": "Créer le profil santé",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1080,
+        160
+      ],
+      "parameters": {
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/health-profiles/",
+        "options": {},
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user_id: $('Machine à états').first().json.telegram_id, physical_activity_level: 'moderate' }) }}"
+      },
+      "notes": "Tolère un 400 « already exists » ; l'identifiant est relu au nœud suivant.",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "9c886873-8d10-4308-910b-9a83c6a355d6",
+      "name": "Relire le profil",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        160
+      ],
+      "parameters": {
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/health-profiles/{{ $('Machine à états').first().json.telegram_id }}",
+        "options": {}
+      },
+      "notes": "Source unique de l'identifiant de profil, que la création ait eu lieu maintenant ou avant."
+    },
+    {
+      "id": "1ecc58b3-a196-4d29-8cb7-6b203fa15b42",
+      "name": "Enregistrer les maladies",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1520,
+        160
+      ],
+      "parameters": {
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/health-profiles/{{ $('Relire le profil').first().json.id }}/list_diseases",
+        "options": {},
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(($('Machine à états').first().json.draft.diseases || []).map(id => ({ disease_id: id }))) }}"
+      }
+    },
+    {
+      "id": "2f98e823-069c-49a6-965d-476d805aaaa5",
+      "name": "Enregistrer les allergènes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1740,
+        160
+      ],
+      "parameters": {
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/health-profiles/{{ $('Relire le profil').first().json.id }}/list_allergens",
+        "options": {},
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(($('Machine à états').first().json.draft.allergens || []).map(id => ({ allergen_id: id }))) }}"
+      }
+    },
+    {
+      "id": "2e11fac1-9daf-4729-8cb2-4e78d19ac2a8",
+      "name": "Récapitulatif",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Récapitulatif écrit après les appels API : on reprend la charge utile\n// calculée par la machine à états et on remplace le texte d'attente.\nconst charge = $('Machine à états').first().json;\nconst maladies = $('Référentiel maladies').all().map((i) => i.json);\nconst allergenes = $('Référentiel allergènes').all().map((i) => i.json);\n\nconst noms = (liste, ids) => {\n  const trouves = liste.filter((x) => (ids || []).includes(x.id)).map((x) => x.name);\n  return trouves.length ? trouves.join(', ') : 'aucune';\n};\nconst echapper = (v) => String(v ?? '')\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nconst d = charge.draft;\nconst texte =\n  `✅ <b>Profil créé, ${echapper(d.first_name)} !</b>\\n\\n` +\n  `🗣 Langue : ${d.language}\\n` +\n  `⚖️ Poids : ${d.weight ? d.weight + ' kg' : 'non renseigné'}\\n` +\n  `🏥 Maladies : ${echapper(noms(maladies, d.diseases))}\\n` +\n  `🚫 Allergies : ${echapper(noms(allergenes, d.allergens))}\\n\\n` +\n  `Envoie-moi le nom d'un plat ou sa composition, et je te dis ce qu'il vaut pour toi.\\n\\n` +\n  `<i>Ces informations ne remplacent pas l'avis d'un professionnel de santé.</i>`;\n\nreturn [{\n  json: {\n    ...charge,\n    telegram_body: { ...charge.telegram_body, text: texte, reply_markup: undefined },\n  },\n}];\n"
+      }
+    },
+    {
+      "id": "ecf7fd73-3abd-45e3-8bab-5e148309e1fb",
+      "name": "Charge utile",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        440
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Point de convergence des deux branches : à partir d'ici, un seul objet,\n// quel que soit le chemin emprunté.\nreturn $input.all();\n"
+      }
+    },
+    {
+      "id": "0ef6135a-9c46-419c-890b-96ac0cf73193",
+      "name": "Enregistrer la session",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1520,
+        440
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO bot_sessions (telegram_id, chat_id, state, draft, last_lang, updated_at)\nVALUES ($1, $2, $3, $4::jsonb, $5, CURRENT_TIMESTAMP)\nON CONFLICT (telegram_id) DO UPDATE\n  SET chat_id    = EXCLUDED.chat_id,\n      state      = EXCLUDED.state,\n      draft      = EXCLUDED.draft,\n      last_lang  = EXCLUDED.last_lang,\n      updated_at = CURRENT_TIMESTAMP;",
+        "options": {
+          "queryReplacement": "={{ [ $json.telegram_id, $json.chat_id, $json.state, JSON.stringify($json.draft), $json.language ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Postgres NutriSénégal"
+        }
+      },
+      "notes": "L'état est enregistré avant l'envoi : un échec Telegram ne fait pas reculer la conversation."
+    },
+    {
+      "id": "19ef3a06-3f06-431b-9e68-808ccfe8f0ab",
+      "name": "Répondre à l’utilisateur",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1740,
+        440
+      ],
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_TOKEN_N8N }}/{{ $('Charge utile').first().json.telegram_method }}",
+        "options": {},
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Charge utile').first().json.telegram_body) }}"
+      },
+      "notes": "sendMessage ou editMessageText selon que l'utilisateur a écrit ou appuyé sur un bouton."
+    },
+    {
+      "id": "0b16f731-0c5f-4c2a-b6b2-cbc4b39f6720",
+      "name": "Note WF6",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        40
+      ],
+      "parameters": {
+        "width": 1180,
+        "height": 210,
+        "content": "## WF6 onboarding\nRemplace le `ConversationHandler` du bot Python (ARCHITECTURE_V2.md §5).\n\n`IDLE → ASK_LANGUAGE → ASK_NAME → ASK_WEIGHT → ASK_DISEASES → ASK_ALLERGENS → DONE`\n\nL'état vit dans `bot_sessions.state` / `.draft`, pas en mémoire : le bot peut redémarrer au milieu d'un onboarding sans rien perdre. Les listes de maladies et d'allergènes viennent de l'API — plus d'UUID codés en dur comme dans `keyboads.py`.",
+        "color": 4
+      }
+    },
+    {
+      "id": "b3e40abc-cc62-4d9c-8808-30b1d2373700",
+      "name": "Note machine",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        400,
+        40
+      ],
+      "parameters": {
+        "width": 460,
+        "height": 210,
+        "content": "### Toute la logique est ici\nUn seul nœud Code, fonction pure : il ne lit rien, n'écrit rien, il **décide**. Les nœuds suivants exécutent.\n\nC'est ce qui rend l'enchaînement rejouable hors n8n, et testable sans Telegram.",
+        "color": 3
+      }
+    },
+    {
+      "id": "4efc782a-cd47-406d-b88f-156159ccb247",
+      "name": "Note finalisation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        840,
+        40
+      ],
+      "parameters": {
+        "width": 1340,
+        "height": 210,
+        "content": "### Finalisation, une seule fois\n`register` et la création du profil tolèrent un 400 « existe déjà » : un utilisateur qui relance `/start` puis retermine ne casse rien. L'identifiant de profil est **relu** ensuite, jamais déduit de la réponse de création.\n\n`list_diseases` / `list_allergens` remplacent la sélection entière : rejouer donne le même résultat.",
+        "color": 3
+      }
+    },
+    {
+      "id": "95364575-1063-43dc-b3d1-30bfb8f4212b",
+      "name": "Note telegram",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        560
+      ],
+      "parameters": {
+        "width": 680,
+        "height": 150,
+        "content": "### Appels Telegram en HTTP\nLe nœud Telegram ne sait pas construire un clavier dynamique. Les claviers étant bâtis à partir des listes de l'API, WF6 appelle l'API Bot directement, avec `$env.TELEGRAM_TOKEN_N8N`.",
+        "color": 5
+      }
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Bouton pressé ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bouton pressé ?": {
+      "main": [
+        [
+          {
+            "node": "Accuser le bouton",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Référentiel maladies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accuser le bouton": {
+      "main": [
+        [
+          {
+            "node": "Référentiel maladies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Référentiel maladies": {
+      "main": [
+        [
+          {
+            "node": "Référentiel allergènes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Référentiel allergènes": {
+      "main": [
+        [
+          {
+            "node": "Machine à états",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Machine à états": {
+      "main": [
+        [
+          {
+            "node": "Finaliser ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finaliser ?": {
+      "main": [
+        [
+          {
+            "node": "Inscrire l’utilisateur",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Charge utile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inscrire l’utilisateur": {
+      "main": [
+        [
+          {
+            "node": "Créer le profil santé",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Créer le profil santé": {
+      "main": [
+        [
+          {
+            "node": "Relire le profil",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relire le profil": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer les maladies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer les maladies": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer les allergènes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer les allergènes": {
+      "main": [
+        [
+          {
+            "node": "Récapitulatif",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Récapitulatif": {
+      "main": [
+        [
+          {
+            "node": "Charge utile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Charge utile": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer la session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer la session": {
+      "main": [
+        [
+          {
+            "node": "Répondre à l’utilisateur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Dakar",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "tags": [],
+  "meta": {
+    "description": "Onboarding conversationnel - architecture v2, phase 1"
+  }
+}

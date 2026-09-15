@@ -120,6 +120,97 @@ class TestDishes:
         assert response.status_code == 404
 
 
+class TestReplHorsLigne:
+    """`/analyze-menu` est le repli de WF3 quand Gemini est indisponible.
+
+    Les tests existants n'exerçaient que `WestAfricanMenuParser` directement :
+    la route, elle, passait un générateur au parser au lieu de la session, et
+    renvoyait un 500 à chaque appel. Le filet de sécurité était donc troué
+    exactement là où on comptait dessus.
+    """
+
+    def test_analyse_un_texte_libre(self, client, seeded_db):
+        response = client.post('/api/analyze-menu',
+                               json={'menu_text': 'du riz blanc avec de la pâte d\'arachide'})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert 0 <= data['score'] <= 100
+        assert data['alert_level'] in ('safe', 'caution', 'danger', 'critical')
+
+    def test_applique_le_profil_de_l_utilisateur(self, client, seeded_db):
+        response = client.post('/api/analyze-menu',
+                               json={'menu_text': 'riz blanc', 'user_id': 'u1'})
+
+        assert response.status_code == 200
+
+    def test_texte_sans_ingredient_connu(self, client, seeded_db):
+        """Un texte hors sujet ne doit pas faire tomber la route : WF3 s'y
+        replie justement quand il n'a rien compris."""
+        response = client.post('/api/analyze-menu', json={'menu_text': 'azerty qwerty'})
+
+        assert response.status_code in (200, 422)
+
+
+class TestRechercheDeplat:
+    """`?search=` : c'est ce qui permet a WF3 de passer d'un nom de plat a un
+    dish_id, donc d'atteindre /analyze-dish, /alternatives et /dish_details.
+    """
+
+    def test_nom_exact(self, client, seeded_db):
+        response = client.get('/api/dishes', params={'search': 'Thiéboudienne'})
+
+        assert response.status_code == 200
+        assert [d['name'] for d in response.json()] == ['Thiéboudienne']
+
+    def test_casse_ignoree(self, client, seeded_db):
+        response = client.get('/api/dishes', params={'search': 'thiéboudienne'})
+
+        assert [d['name'] for d in response.json()] == ['Thiéboudienne']
+
+    def test_fragment_de_nom(self, client, seeded_db):
+        response = client.get('/api/dishes', params={'search': 'mafé'})
+
+        assert [d['name'] for d in response.json()] == ['Mafé cacahuète']
+
+    def test_sans_accent(self, client, seeded_db):
+        """Ce que tape reellement un utilisateur sur un clavier de telephone :
+        ILIKE ne rattrape pas l'accent manquant, le rapprochement approchant si.
+        """
+        response = client.get('/api/dishes', params={'search': 'thieboudienne'})
+
+        assert [d['name'] for d in response.json()] == ['Thiéboudienne']
+
+    def test_faute_de_frappe(self, client, seeded_db):
+        response = client.get('/api/dishes', params={'search': 'thiebboudiene'})
+
+        assert [d['name'] for d in response.json()] == ['Thiéboudienne']
+
+    def test_plat_inconnu_renvoie_une_liste_vide(self, client, seeded_db):
+        """Pas de 404 : l'absence de correspondance est un resultat normal, que
+        WF3 traduit en repli sur /analyze-ingredients."""
+        response = client.get('/api/dishes', params={'search': 'pizza'})
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_renvoie_un_identifiant_exploitable(self, client, seeded_db):
+        response = client.get('/api/dishes', params={'search': 'mafé'})
+
+        assert response.json()[0]['id'] == 'd2'
+
+    def test_combine_avec_meal_type(self, client, seeded_db):
+        response = client.get('/api/dishes',
+                              params={'search': 'mafé', 'meal_type': 'dinner'})
+
+        assert response.json() == []
+
+    def test_terme_trop_court_rejete(self, client):
+        response = client.get('/api/dishes', params={'search': 'a'})
+
+        assert response.status_code == 422
+
+
 class TestAnalyse:
     def test_analyse_plat_inexistant(self, client):
         response = client.post('/api/analyze-dish', json={

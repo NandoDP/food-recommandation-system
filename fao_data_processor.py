@@ -4,6 +4,25 @@ import uuid
 import psycopg2
 import os
 
+
+def _connexion_postgres(dbname=None, user=None, password=None, host=None, port=None):
+    """Ouvre une connexion psycopg2.
+
+    Priorité à DATABASE_URL (celle du .env, donc la base du docker-compose) ;
+    les paramètres explicites restent utilisables pour viser une autre base.
+    psycopg2 ne comprend pas le préfixe SQLAlchemy `+psycopg2`, on le retire.
+    """
+    dsn = os.environ.get("DATABASE_URL")
+    if dsn and not any([dbname, user, password, host, port]):
+        return psycopg2.connect(dsn.replace("postgresql+psycopg2://", "postgresql://"))
+    return psycopg2.connect(
+        dbname=dbname or os.environ.get("PGDATABASE", "nutrisenegal_db"),
+        user=user or os.environ.get("PGUSER", "nutrisenegal"),
+        password=password or os.environ.get("PGPASSWORD"),
+        host=host or os.environ.get("PGHOST", "localhost"),
+        port=port or os.environ.get("PGPORT", 5432),
+    )
+
 class WAFCTFoodsExtractor:
     """
     Extrait les ALIMENTS DE BASE (table FOODS) depuis WAFCT 2019
@@ -260,17 +279,16 @@ VALUES ('{food['id']}', '{name}', {f"'{scientific}'" if scientific else 'NULL'},
         
         print(f"✅ {filename} créé")
     
-    def insert_into_postgres(self, foods_data: list, dbname='nutrition_westaf', 
-                            user=None, password=None, host='localhost', port=5432):
-        """Insertion directe PostgreSQL"""
-        
-        user = user or os.environ.get('PGUSER', 'postgres')
-        password = password or os.environ.get('PGPASSWORD')
-        
+    def insert_into_postgres(self, foods_data: list, dbname=None,
+                            user=None, password=None, host=None, port=None):
+        """Insertion directe PostgreSQL (connexion : voir _connexion_postgres)"""
+
+        conn = None
         try:
-            conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port)
+            conn = _connexion_postgres(dbname, user, password, host, port)
             cur = conn.cursor()
-            print(f"🔌 Connecté à Postgres {user}@{host}:{port}/{dbname}")
+            print(f"🔌 Connecté à {conn.get_dsn_parameters().get('dbname')}"
+                  f"@{conn.get_dsn_parameters().get('host')}")
             
             inserted = 0
             for food in foods_data:
@@ -340,7 +358,7 @@ if __name__ == "__main__":
     # extractor.generate_sql(foods_data)
     
     # Insertion directe (optionnel)
-    extractor.insert_into_postgres(foods_data, user='postgres', password='nando')
+    extractor.insert_into_postgres(foods_data)
     
     print("\n✅ TERMINÉ!")
     # print("📁 Fichiers: foods_wafct.json, insert_foods.sql")

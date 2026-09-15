@@ -2,6 +2,22 @@ from typing import List, Dict
 from api.models.analyze import AlertLevel, DiseaseType
 
 
+def lire(nutr: Dict, cle: str, defaut):
+    """Lit un nutriment en tolérant une valeur explicitement nulle.
+
+    `dict.get(cle, defaut)` ne protège que d'une clé **absente**. Or le
+    calculateur pose la clé avec `None` quand l'information manque — aucun
+    aliment du plat n'a d'index glycémique connu, par exemple. La comparaison
+    qui suivait échouait alors en `TypeError` et emportait toute l'analyse,
+    dont le repli hors ligne de WF3.
+
+    Le défaut appliqué est celui que chaque règle déclarait déjà : cette
+    fonction ne change aucun seuil, elle rend effectif ce qui était écrit.
+    """
+    valeur = nutr.get(cle)
+    return defaut if valeur is None else valeur
+
+
 class NutritionEngine:    
     """
     Moteur de règles nutritionnelles
@@ -255,7 +271,7 @@ class NutritionEngine:
         score = 100.0
         
         # 1. Index glycémique
-        gi = nutr.get('glycemic_index', 60)
+        gi = lire(nutr, 'glycemic_index', 60)
         if gi > self.DIABETES_RULES['gi_thresholds']['high']:
             score -= 30
             results['disease_alerts'].append({
@@ -272,7 +288,7 @@ class NutritionEngine:
             })
         
         # 2. Glucides
-        carbs = nutr.get('carbohydrate_g', 0)
+        carbs = lire(nutr, 'carbohydrate_g', 0)
         max_carbs = self.DIABETES_RULES['carbs_per_meal']['max']
         if carbs > max_carbs:
             score -= 20
@@ -283,7 +299,7 @@ class NutritionEngine:
             })
         
         # 3. Fibres
-        fiber = nutr.get('fiber_g', 0)
+        fiber = lire(nutr, 'fiber_g', 0)
         if fiber < self.DIABETES_RULES['fiber_min']:
             score -= 10
             results['recommendations'].append(
@@ -308,7 +324,7 @@ class NutritionEngine:
         score = 100.0
         
         # Sodium
-        sodium = nutr.get('sodium_mg', 0)
+        sodium = lire(nutr, 'sodium_mg', 0)
         max_sodium = self.HYPERTENSION_RULES['sodium_per_meal']
         
         if sodium > max_sodium:
@@ -348,7 +364,7 @@ class NutritionEngine:
         nutr = dish.get('nutritional_summary', {})
         
         # 1. Sodium (même règle qu'hypertension)
-        sodium = nutr.get('sodium_mg', 0)
+        sodium = lire(nutr, 'sodium_mg', 0)
         if sodium > 667:  # 2000mg/3 repas
             score -= 25
             results['disease_alerts'].append({
@@ -358,7 +374,7 @@ class NutritionEngine:
             })
         
         # 2. Protéines (vérifier si excessif)
-        protein = nutr.get('protein_g', 0)
+        protein = lire(nutr, 'protein_g', 0)
         max_protein = weight * self.LIVER_RULES['protein_per_kg']['normal']
         if protein > max_protein / 3:  # Par repas
             score -= 15
@@ -411,7 +427,7 @@ class NutritionEngine:
         nutr = dish.get('nutritional_summary', {})
         
         # Potassium
-        potassium = nutr.get('potassium_mg', 0)
+        potassium = lire(nutr, 'potassium_mg', 0)
         if potassium > 667:  # 2000mg/3 repas
             score -= 30
             results['disease_alerts'].append({
@@ -421,7 +437,7 @@ class NutritionEngine:
             })
         
         # Sodium
-        sodium = nutr.get('sodium_mg', 0)
+        sodium = lire(nutr, 'sodium_mg', 0)
         if sodium > 667:
             score -= 20
         
@@ -445,9 +461,9 @@ class NutritionEngine:
         score = 100.0
         nutr = dish_data.get('nutritional_summary', {})
         
-        protein = nutr.get('protein_g', 0)
-        fat = nutr.get('fat_g', 0)
-        carbs = nutr.get('carbohydrate_g', 0)
+        protein = lire(nutr, 'protein_g', 0)
+        fat = lire(nutr, 'fat_g', 0)
+        carbs = lire(nutr, 'carbohydrate_g', 0)
         
         total = protein + fat + carbs
         if total == 0:

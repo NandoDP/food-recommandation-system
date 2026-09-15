@@ -4,6 +4,25 @@ import uuid
 import psycopg2
 import os
 
+
+def _connexion_postgres(dbname=None, user=None, password=None, host=None, port=None):
+    """Ouvre une connexion psycopg2.
+
+    Priorité à DATABASE_URL (celle du .env, donc la base du docker-compose) ;
+    les paramètres explicites restent utilisables pour viser une autre base.
+    psycopg2 ne comprend pas le préfixe SQLAlchemy `+psycopg2`, on le retire.
+    """
+    dsn = os.environ.get("DATABASE_URL")
+    if dsn and not any([dbname, user, password, host, port]):
+        return psycopg2.connect(dsn.replace("postgresql+psycopg2://", "postgresql://"))
+    return psycopg2.connect(
+        dbname=dbname or os.environ.get("PGDATABASE", "nutrisenegal_db"),
+        user=user or os.environ.get("PGUSER", "nutrisenegal"),
+        password=password or os.environ.get("PGPASSWORD"),
+        host=host or os.environ.get("PGHOST", "localhost"),
+        port=port or os.environ.get("PGPORT", 5432),
+    )
+
 class CompleteDishesExtractor:
     """
     Extrait DISHES + crée INGREDIENTS + lie via DISH_INGREDIENTS
@@ -365,18 +384,15 @@ VALUES ('{di['dish_id']}', '{di['ingredient_id']}', {qty}, '{di['unit']}');
         print(f"✅ {filename} créé")
     
     def insert_into_postgres(self, dishes, ingredients, dish_ingredients,
-                            dbname='nutrition_westaf', user=None, password=None,
-                            host='localhost', port=5432):
+                            dbname=None, user=None, password=None,
+                            host=None, port=None):
         """Insertion PostgreSQL complète"""
-        
-        user = user or os.environ.get('PGUSER', 'postgres')
-        password = password or os.environ.get('PGPASSWORD')
+        conn = None
         
         try:
-            conn = psycopg2.connect(dbname=dbname, user=user, password=password, 
-                                   host=host, port=port)
+            conn = _connexion_postgres(dbname, user, password, host, port)
             cur = conn.cursor()
-            print(f"\n🔌 Connecté à Postgres {user}@{host}:{port}/{dbname}")
+            print(f"\n🔌 Connecté à {conn.get_dsn_parameters().get('dbname')}")
             
             # 1. INGREDIENTS
             print("\n📝 Insertion INGREDIENTS...")
@@ -480,8 +496,7 @@ if __name__ == "__main__":
     # extractor.generate_complete_sql(all_dishes, all_ingredients, all_dish_ingredients)
     
     # 5. Insertion PostgreSQL (optionnel)
-    extractor.insert_into_postgres(all_dishes, all_ingredients, all_dish_ingredients,
-                                   user='postgres', password='nando')
+    extractor.insert_into_postgres(all_dishes, all_ingredients, all_dish_ingredients)
     
     print("\n✅ TERMINÉ!")
     # print("📁 Fichiers: complete_dishes_data.json, insert_complete_dishes.sql")
@@ -833,7 +848,7 @@ if __name__ == "__main__":
 #         try:
 #             conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port)
 #             cur = conn.cursor()
-#             print(f"🔌 Connecté à Postgres {user}@{host}:{port}/{dbname}")
+#             print(f"🔌 Connecté à {conn.get_dsn_parameters().get('dbname')}")
 
 #             for dish in dishes:
 #                 dish_id = dish['id']

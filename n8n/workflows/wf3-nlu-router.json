@@ -1,0 +1,1011 @@
+{
+  "id": "wf3-nlu-router",
+  "name": "WF3 nlu-router",
+  "active": false,
+  "nodes": [
+    {
+      "id": "c9f778da-efd8-5107-87e6-a58d3e8dc970",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1120,
+        300
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "notes": "Recoit l'enveloppe plate de WF1 : text, language, user_id, chat_id, session_history."
+    },
+    {
+      "id": "c0696599-e2e0-5712-b1b1-c41be1099565",
+      "name": "Contexte NLU",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -900,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Prepare l'appel Gemini. Ce noeud ne fait aucun appel : il assemble le prompt\n// et le corps de la requete, pour que le prompt reste lisible ici plutot que\n// noye dans une expression du noeud HTTP.\n//\n// Le profil sante n'entre PAS dans le prompt : c'est l'API qui l'applique, et\n// le LLM n'a pas a raisonner sur la sante (ARCHITECTURE_V2.md §7).\nconst e = $input.first().json;\n\nfunction historique(brut) {\n  if (Array.isArray(brut)) return brut;\n  if (typeof brut === 'string') {\n    try { const v = JSON.parse(brut); return Array.isArray(v) ? v : []; } catch (_) { return []; }\n  }\n  return [];\n}\n\nconst tours = historique(e.session_history)\n  .slice(-5)\n  .map((t) => `${t.role === 'bot' ? 'Assistant' : 'Utilisateur'} : ${t.text}`)\n  .join('\\n');\n\nconst invite = [\n  `Langue enregistree de l'utilisateur : ${e.language || 'fr'}.`,\n  tours ? `Derniers echanges :\\n${tours}` : \"Premier echange de la session.\",\n  `Message a analyser :\\n${e.text || ''}`,\n].join('\\n\\n');\n\nconst consigne = [\n  \"Tu es l'aiguilleur de NutriSenegal, un assistant nutritionnel senegalais.\",\n  \"Tu ne reponds jamais a l'utilisateur : tu classes son message et tu en extrais les ingredients.\",\n  '',\n  'Intentions :',\n  '- analyze_dish : il decrit un plat ou un repas, present ou passe, et veut savoir ce qu\\'il vaut.',\n  '- recommend : il demande quoi manger.',\n  '- alternatives : il demande par quoi remplacer un plat.',\n  '- dish_details : il demande la composition d\\'un plat.',\n  '- update_profile : il veut modifier son profil (maladies, allergies, poids, langue, audio).',\n  '- help : il demande de l\\'aide ou ce que tu sais faire.',\n  '- other : salutation, hors sujet, ou message incomprehensible.',\n  '',\n  'Regles strictes :',\n  '1. name_fr est TOUJOURS le nom francais courant de l\\'ingredient, meme si le message est en wolof',\n  '   ou en anglais : la base de donnees et le moteur de regles sont en francais.',\n  '   name_raw garde le mot tel qu\\'ecrit par l\\'utilisateur.',\n  '2. Tu n\\'inventes aucun ingredient : seuls ceux que le message mentionne.',\n  '   Le nom d\\'un plat connu ne suffit pas a deduire sa recette — laisse ingredients vide',\n  '   et renseigne dish_name, la base retrouvera la composition.',\n  '3. quantity et unit ne sont renseignes que s\\'ils sont dits. Sinon null.',\n  '4. language est la langue du MESSAGE, pas celle du profil.',\n  '5. confidence est ta certitude reelle sur l\\'intention ET sur les ingredients.',\n  '   En dessous de 0.6 le systeme bascule sur une analyse de repli et demande',\n  '   confirmation : une valeur honnete vaut mieux qu\\'une valeur flatteuse.',\n].join('\\n');\n\nconst schema = {\n  type: 'object',\n  properties: {\n    language: { type: 'string', enum: ['fr', 'wo', 'en'] },\n    intent: {\n      type: 'string',\n      enum: ['analyze_dish', 'recommend', 'alternatives', 'dish_details', 'update_profile', 'help', 'other'],\n    },\n    dish_name: { type: 'string', nullable: true },\n    ingredients: {\n      type: 'array',\n      items: {\n        type: 'object',\n        properties: {\n          name_fr: { type: 'string' },\n          name_raw: { type: 'string' },\n          quantity: { type: 'number', nullable: true },\n          unit: { type: 'string', nullable: true },\n        },\n        required: ['name_fr'],\n      },\n    },\n    meal_type: { type: 'string', enum: ['breakfast', 'lunch', 'dinner'], nullable: true },\n    confidence: { type: 'number' },\n  },\n  required: ['language', 'intent', 'confidence'],\n};\n\nreturn [{\n  json: {\n    ...e,\n    gemini_body: {\n      systemInstruction: { parts: [{ text: consigne }] },\n      contents: [{ role: 'user', parts: [{ text: invite }] }],\n      generationConfig: {\n        // Temperature basse et sortie contrainte : pas de texte libre ici (§4.2).\n        temperature: 0.2,\n        responseMimeType: 'application/json',\n        responseSchema: schema,\n      },\n    },\n  },\n}];\n"
+      },
+      "notes": "Assemble prompt + responseSchema. Le prompt vit ici, pas dans une expression du noeud HTTP."
+    },
+    {
+      "id": "0af549d3-8318-52b2-88cf-60a3e36133c8",
+      "name": "Gemini nlu-router",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -680,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_LLM_MODEL }}:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "={{ $env.GEMINI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.gemini_body) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "notes": "Modele lu dans $env.GEMINI_LLM_MODEL (§4.4). Trois essais : les 503 « high demand » sont transitoires. En erreur apres relance, on continue et le repli /analyze-menu prend le relais.",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "14eb7fca-97fc-525a-8940-9afe7d2d0310",
+      "name": "Lire la sortie NLU",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Lit la sortie Gemini et decide si elle est exploitable.\n//\n// Le noeud HTTP est en « continue on error » : une panne Gemini arrive ici\n// comme un item d'erreur, pas comme un echec de workflow. C'est ce qui permet\n// le repli sur /analyze-menu (spaCy + rapidfuzz), qui ne depend d'aucun\n// service externe — decision 4 du §11.\nconst base = $('Contexte NLU').first().json;\nconst reponse = $input.first().json;\n\nconst INTENTS = ['analyze_dish', 'recommend', 'alternatives', 'dish_details', 'update_profile', 'help', 'other'];\nconst SEUIL = 0.6;\n\nlet brut = null;\nlet erreur = null;\ntry {\n  const parts = reponse?.candidates?.[0]?.content?.parts;\n  const texte = Array.isArray(parts) ? parts.map((p) => p.text ?? '').join('') : null;\n  if (!texte) {\n    throw new Error(reponse?.error?.message || reponse?.message || 'reponse Gemini vide ou bloquee');\n  }\n  brut = JSON.parse(texte);\n} catch (e) {\n  erreur = String(e?.message ?? e);\n}\n\nconst confiance = typeof brut?.confidence === 'number' ? brut.confidence : 0;\nlet intent = INTENTS.includes(brut?.intent) ? brut.intent : 'other';\n\nconst nom = typeof brut?.dish_name === 'string' ? brut.dish_name.trim() : '';\nconst ingredients = Array.isArray(brut?.ingredients)\n  ? brut.ingredients.filter((i) => i && typeof i.name_fr === 'string' && i.name_fr.trim())\n  : [];\n\n// Deux cas de repli, volontairement distincts :\n//   - plus de JSON du tout : Gemini est indisponible, on replie quoi qu'il arrive ;\n//   - JSON douteux sur une analyse : /analyze-menu retente l'extraction hors ligne.\n// Une salutation mal notee ne merite pas ce detour : elle devient « other ».\nconst repli = brut === null || (confiance < SEUIL && intent === 'analyze_dish');\nif (brut !== null && confiance < SEUIL && intent !== 'analyze_dish') {\n  intent = 'other';\n}\n\nconst sortie = { ...base };\ndelete sortie.gemini_body;   // le prompt n'a plus a voyager dans les items\n\nreturn [{\n  json: {\n    ...sortie,\n    nlu: {\n      intent,\n      language: ['fr', 'wo', 'en'].includes(brut?.language) ? brut.language : (base.language || 'fr'),\n      // En deca de 2 caracteres l'API refuse la recherche : autant ne pas la tenter.\n      dish_name: nom.length >= 2 ? nom : null,\n      ingredients,\n      meal_type: ['breakfast', 'lunch', 'dinner'].includes(brut?.meal_type) ? brut.meal_type : null,\n      confidence: confiance,\n    },\n    nlu_ok: !repli,\n    nlu_error: erreur,\n    // Vrai des que le systeme n'est pas sur de lui : le compositeur ajoute alors\n    // une demande de confirmation plutot que de laisser passer (§7).\n    needs_confirmation: repli || confiance < SEUIL,\n  },\n}];\n"
+      },
+      "notes": "Seul endroit qui decide d'un repli. Tous les noeuds suivants lisent $('Lire la sortie NLU')."
+    },
+    {
+      "id": "f358f763-ccfd-51b6-bd6d-fb5743a9f304",
+      "name": "NLU exploitable ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f358f763-ccfd-51b6-bd6d-fb5743a9f304",
+              "leftValue": "={{ $json.nlu_ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "bc288b19-7474-555e-bd1b-207a71f81c33",
+      "name": "Repli /analyze-menu",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        640
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/analyze-menu",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ menu_text: $json.text, user_id: $json.user_id }) }}",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.INTERNAL_API_KEY }}"
+            }
+          ]
+        }
+      },
+      "notes": "spaCy + rapidfuzz, sans service externe : ce chemin reste disponible quand Gemini ne l'est pas (decision 4).",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "68c07fc1-4dd2-598e-8e4d-a005fc8dee44",
+      "name": "Plat nommé ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "68c07fc1-4dd2-598e-8e4d-a005fc8dee44",
+              "leftValue": "={{ Boolean($json.nlu.dish_name) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e4bf966c-406f-5c3a-8f9a-653bc4969fe7",
+      "name": "Chercher le plat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        100
+      ],
+      "parameters": {
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/dishes?limit=1&search={{ encodeURIComponent($json.nlu.dish_name) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.INTERNAL_API_KEY }}"
+            }
+          ]
+        }
+      },
+      "notes": "Reponse complete volontaire : une liste vide ne produirait aucun item, et le noeud suivant ne s'executerait pas du tout.",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "aa813a9e-9752-543f-9103-2c1bf13956f5",
+      "name": "Retenir le plat",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Rattache le nom prononce a une ligne de `dishes`, si elle existe.\n// Aucune correspondance n'est un resultat normal : l'analyse passera alors par\n// les ingredients extraits, pas par la fiche du plat.\nconst base = $('Lire la sortie NLU').first().json;\n// `fullResponse` : le corps est sous .body, et l'item existe meme quand la\n// liste est vide — c'est tout l'interet ici.\nconst reponse = $input.first().json;\nconst resultats = (Array.isArray(reponse?.body) ? reponse.body : []).filter((d) => d && d.id);\nconst plat = resultats[0] ?? null;\n\nreturn [{\n  json: {\n    ...base,\n    dish_id: plat ? plat.id : null,\n    dish_db_name: plat ? plat.name : null,\n  },\n}];\n"
+      }
+    },
+    {
+      "id": "ba69e31f-2129-536b-a88b-0c70066ff822",
+      "name": "Sans plat nommé",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Aucun nom de plat dans le message : les deux branches doivent quand meme\n// porter le meme champ, sinon le Switch recoit des items de formes differentes.\nreturn [{ json: { ...$input.first().json, dish_id: null, dish_db_name: null } }];\n"
+      },
+      "notes": "Un noeud Set ecrirait la chaine « null », que Boolean() juge vraie : l'analyse partirait sur un plat inexistant."
+    },
+    {
+      "id": "3dbf5a06-5abd-5f26-a211-d9678bd98f6e",
+      "name": "Intention",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        700,
+        200
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "7c743dde-30ee-54c1-8474-d5443b36d0a0",
+                    "leftValue": "={{ $json.nlu.intent }}",
+                    "rightValue": "analyze_dish",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "analyser"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ad81f855-2203-5103-903d-56ff4aa0c205",
+                    "leftValue": "={{ $json.nlu.intent }}",
+                    "rightValue": "recommend",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "recommander"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "632108fb-af71-5d5b-9ec8-cc9e7800eab6",
+                    "leftValue": "={{ $json.nlu.intent }}",
+                    "rightValue": "alternatives",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "alternatives"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "d1640a03-8f7a-5290-8a0c-65048ebed971",
+                    "leftValue": "={{ $json.nlu.intent }}",
+                    "rightValue": "dish_details",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "détails"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "cb8f0319-1944-5d1c-a23b-41581b2b12e7",
+                    "leftValue": "={{ $json.nlu.intent }}",
+                    "rightValue": "update_profile",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "profil"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "aide"
+        }
+      }
+    },
+    {
+      "id": "6e5ff2a4-126c-5733-b009-00ed1c69467b",
+      "name": "Plat en base ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        940,
+        -200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6e5ff2a4-126c-5733-b009-00ed1c69467b",
+              "leftValue": "={{ Boolean($json.dish_id) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Le partage entre les deux routes d'analyse (§6.2) : fiche connue, ou ingredients extraits."
+    },
+    {
+      "id": "fdc89471-cdc7-5643-94aa-45fe772025b1",
+      "name": "Analyser le plat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        -300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/analyze-dish",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ dish_id: $json.dish_id, user_id: $json.user_id }) }}",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.INTERNAL_API_KEY }}"
+            }
+          ]
+        }
+      },
+      "notes": "La composition vient de la base, pas du LLM : elle est plus fiable que ce qu'il deduirait d'un nom.",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "41d9f887-ad47-5a0a-8d7c-86fe38be6e5a",
+      "name": "Analyser les ingrédients",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        -120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/analyze-ingredients",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user_id: $json.user_id, dish_name: $json.nlu.dish_name, ingredients: ($json.nlu.ingredients || []).map(i => ({ name: i.name_fr, quantity: i.quantity ?? null, unit: i.unit ?? null })) }) }}",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.INTERNAL_API_KEY }}"
+            }
+          ]
+        }
+      },
+      "notes": "name_fr -> name : l'API attend des noms francais. unmatched_ingredients revient dans la reponse et declenche la demande de confirmation.",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "dbc5fddc-8a15-5925-a95b-14ded1b66904",
+      "name": "Recommandations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        40
+      ],
+      "parameters": {
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/recommendations/{{ $json.user_id }}{{ $json.nlu.meal_type ? '?meal_type=' + $json.nlu.meal_type : '' }}",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.INTERNAL_API_KEY }}"
+            }
+          ]
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "fed94748-1210-5a9e-99aa-c5f93be63fd0",
+      "name": "Alternatives",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/alternatives/{{ $json.dish_id }}?user_id={{ $json.user_id }}",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.INTERNAL_API_KEY }}"
+            }
+          ]
+        }
+      },
+      "notes": "user_id est un parametre de requete, pas un corps : la route ne prend pas de modele Pydantic.",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "2065557d-8c8b-5f43-b96a-64d7ac62b3d1",
+      "name": "Détails du plat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        360
+      ],
+      "parameters": {
+        "url": "={{ $env.INTERNAL_API_BASE_URL }}/{{ $json.dish_id }}/dish_details",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.INTERNAL_API_KEY }}"
+            }
+          ]
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "704ca84e-92d8-5587-8690-691b04200c84",
+      "name": "Profil : WF7 à brancher",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1200,
+        520
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9a2a19bd-ce44-5f10-b2d7-8519be39d192",
+              "name": "reply_text",
+              "value": "=⚙️ Tu veux modifier ton profil. WF7 profile-management n’est pas encore branché : passe par l’ancien bot pour l’instant.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "166fc2cb-4520-5b37-b957-1e85671cb1e1",
+      "name": "Aide",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1200,
+        680
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "967c94e5-8ac5-5455-b14f-1ee2cad78ff7",
+              "name": "reply_text",
+              "value": "=👋 Je suis NutriSénégal. Écris-moi :\n\n• *ce que tu manges* — « riz au poisson avec de l’huile » — je l’analyse selon ton profil\n• *« qu’est-ce que je mange ? »* — je propose des plats adaptés\n• *« par quoi remplacer le thiéboudienne ? »* — je cherche des alternatives\n• *« c’est quoi le mafé ? »* — je détaille la composition d’un plat",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "notes": "Gabarit fixe, pas une generation du LLM (§7). WF4 le traduira."
+    },
+    {
+      "id": "41df05cc-05c3-592e-809d-cc55ee294917",
+      "name": "Composer la réponse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Met en forme le JSON de l'API. Provisoire : WF4 reply-composer prendra ce\n// role et redigera dans la langue de l'utilisateur.\n//\n// Regle qui ne changera pas avec WF4 : aucun chiffre n'est recalcule ici. Tout\n// ce qui est affiche vient tel quel de la reponse de l'API (§7).\nconst base = $('Lire la sortie NLU').first().json;\nconst r = $input.first().json ?? {};\nconst nlu = base.nlu ?? {};\n\nconst PUCES = { safe: '✅', caution: '⚠️', danger: '🚫', critical: '🛑' };\n\n// Telegram refuse tout le message si le Markdown est mal forme. Les noms de\n// plats et d'ingredients viennent du LLM ou de l'utilisateur : un « _ » egare\n// suffirait a faire echouer sendMessage, donc a ne rien repondre du tout.\n// Seule la structure porte le balisage ; les valeurs en sont debarrassees.\nfunction net(valeur) {\n  return String(valeur ?? '').replace(/[*_`\\[\\]]/g, '');\n}\n\nfunction echec(charge) {\n  if (charge?.error) return charge.error?.message ?? charge.error?.detail ?? String(charge.error);\n  if (charge?.detail) return typeof charge.detail === 'string' ? charge.detail : JSON.stringify(charge.detail);\n  return null;\n}\n\nfunction bloc_analyse(a) {\n  const lignes = [];\n  lignes.push(`${PUCES[a.alert_level] ?? 'ℹ️'} *${net(a.name)}* — ${a.score}/100`);\n\n  const alertes = [...(a.allergen_alerts ?? []), ...(a.disease_alerts ?? [])];\n  if (alertes.length) {\n    lignes.push('');\n    for (const al of alertes) lignes.push(`${PUCES[al.level] ?? '•'} ${net(al.message)}`);\n  }\n\n  if (a.recommendations?.length) {\n    lignes.push('');\n    for (const c of a.recommendations.slice(0, 5)) lignes.push(`• ${net(c)}`);\n  }\n\n  const ns = a.nutritional_summary ?? {};\n  if (ns.energy_kcal != null) {\n    lignes.push('');\n    lignes.push(`${Math.round(ns.energy_kcal)} kcal · ${Math.round(ns.protein_g ?? 0)} g de proteines · ${Math.round(ns.carbohydrate_g ?? 0)} g de glucides`);\n  }\n\n  if (a.matched_ingredients?.length) {\n    lignes.push('');\n    lignes.push(`Reconnus : ${a.matched_ingredients.map(net).join(', ')}`);\n  }\n  if (a.unmatched_ingredients?.length) {\n    lignes.push(`Non reconnus : ${a.unmatched_ingredients.map(net).join(', ')}`);\n  }\n  return lignes.join('\\n');\n}\n\nlet texte;\nconst probleme = echec(r);\n\nif (typeof r.reply_text === 'string') {\n  // Branches sans appel d'API (aide, profil) : le texte est deja pret.\n  texte = r.reply_text;\n} else if (probleme) {\n  // Le corps HTTP brut ne va PAS dans le message : l'utilisateur n'a que\n  // faire d'un 503 d'Axios. La cause technique part dans api_error, visible\n  // dans l'execution n8n et dans bot_errors.\n  //\n  // Un repli (nlu_ok faux) veut dire que l'intention n'a pas pu etre lue :\n  // le message decrivait presque toujours un repas, donc on traite le cas\n  // comme une analyse plutot que comme une demande incomprise.\n  if (nlu.intent === 'analyze_dish' || base.nlu_ok === false) {\n    texte = `Je n'ai pas reussi a analyser ce repas.\\n\\nDis-moi ses ingredients, par exemple « riz, poisson, huile, oignon ».`;\n  } else if (nlu.intent === 'alternatives' || nlu.intent === 'dish_details') {\n    const nomme = nlu.dish_name ? `« ${net(nlu.dish_name)} »` : 'ce plat';\n    texte = `Je ne connais pas ${nomme} en base. Essaie un autre nom, ou decris-moi ce qu'il contient.`;\n  } else {\n    texte = 'Je n\\'ai pas pu traiter la demande. Reessaie dans un instant.';\n  }\n} else if (Array.isArray(r.recommendations) && r.count != null) {\n  const lignes = ['🍽️ *Suggestions pour toi*', ''];\n  for (const d of r.recommendations) {\n    lignes.push(`${PUCES[d.alert_level] ?? '•'} *${net(d.dish_name)}* — ${d.score}/100`);\n    if (d.reason) lignes.push(`  _${net(d.reason)}_`);\n  }\n  if (r.personalized_tips?.length) {\n    lignes.push('');\n    for (const c of r.personalized_tips.slice(0, 3)) lignes.push(`• ${net(c)}`);\n  }\n  texte = lignes.join('\\n');\n} else if (r.original_dish_id) {\n  const lignes = [`🔄 *A la place de ${net(r.original_dish_name)}* (${r.original_score}/100)`, ''];\n  for (const a of r.alternatives ?? []) {\n    lignes.push(`${PUCES[a.alert_level] ?? '•'} *${net(a.dish_name)}* — ${a.score}/100`);\n    if (a.reason) lignes.push(`  _${net(a.reason)}_`);\n  }\n  if (!r.alternatives?.length) lignes.push('_Aucune alternative plus adaptee trouvee en base._');\n  for (const s of (r.substitution_suggestions ?? []).slice(0, 3)) lignes.push(`• ${net(s)}`);\n  texte = lignes.join('\\n');\n} else if (Array.isArray(r.ingredients) && r.name) {\n  const lignes = [`📋 *${net(r.name)}*`];\n  if (r.description) lignes.push(`_${net(r.description)}_`);\n  lignes.push('');\n  for (const i of r.ingredients) {\n    lignes.push(`• ${net(i.name)}${i.quantity ? ` — ${i.quantity} ${net(i.unit ?? '')}`.trimEnd() : ''}`);\n  }\n  texte = lignes.join('\\n');\n} else if (r.score != null && r.alert_level) {\n  texte = bloc_analyse(r);\n} else {\n  texte = \"Je n'ai pas compris la demande. Decris-moi un plat, ou demande-moi une suggestion.\";\n}\n\n// Confirmation : ni le repli ni un ingredient non reconnu ne doivent passer\n// inapercus. Une analyse incomplete presentee comme complete est le pire des\n// resultats (§7).\nconst non_reconnus = r.unmatched_ingredients ?? [];\nif (base.needs_confirmation || non_reconnus.length) {\n  const raison = non_reconnus.length\n    ? `Je n'ai pas reconnu : ${non_reconnus.map(net).join(', ')}.`\n    : \"Je ne suis pas sur d'avoir bien compris.\";\n  texte += `\\n\\n❓ ${raison} Reformule si le compte n'y est pas.`;\n}\n\ntexte += '\\n\\n_Ces indications ne remplacent pas l\\'avis d\\'un professionnel de sante._';\n\n// Historique court : 5 derniers tours, c'est ce que relit le prompt de WF3.\nfunction historique(brut) {\n  if (Array.isArray(brut)) return brut;\n  if (typeof brut === 'string') {\n    try { const v = JSON.parse(brut); return Array.isArray(v) ? v : []; } catch (_) { return []; }\n  }\n  return [];\n}\nconst tours = [\n  ...historique(base.session_history),\n  { role: 'user', text: base.text ?? '', lang: nlu.language },\n  { role: 'bot', text: texte, lang: base.language },\n].slice(-5);\n\n// Derive de langue (§5, WF3.3) : trois tours d'affilee dans une autre langue\n// que la preference enregistree, on propose d'en changer.\nconst LANGUES = { fr: 'francais', wo: 'wolof', en: 'anglais' };\nconst derniers = tours.filter((t) => t.role === 'user').slice(-3);\nconst derive = derniers.length === 3\n  && derniers.every((t) => t.lang && t.lang !== base.user_language);\nif (derive) {\n  texte += `\\n\\n🌍 Tu m'ecris en ${LANGUES[derniers[0].lang] ?? derniers[0].lang}. Veux-tu que je te reponde dans cette langue ? (/langue)`;\n  tours[tours.length - 1].text = texte;\n}\n\nreturn [{\n  json: {\n    telegram_id: base.telegram_id,\n    chat_id: base.chat_id,\n    user_id: base.user_id,\n    language: base.language,\n    intent: nlu.intent,\n    detected_language: nlu.language,\n    confidence: nlu.confidence,\n    needs_confirmation: base.needs_confirmation || non_reconnus.length > 0,\n    nlu_error: base.nlu_error ?? null,\n    api_error: probleme,\n    history: tours,\n    reply_text: texte,\n  },\n}];\n"
+      },
+      "notes": "Provisoire : WF4 reply-composer prendra ce role. Aucun chiffre n'est recalcule ici (§7)."
+    },
+    {
+      "id": "a8933a84-2b3e-5578-a92d-5893b85771f1",
+      "name": "Enregistrer la session",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1780,
+        200
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- WF1 a deja cree la ligne ; l'INSERT n'est la que pour garantir\n-- exactement une ligne en retour : sans RETURNING, un UPDATE sans effet\n-- ne produirait aucun item et le message ne partirait jamais.\n-- `state` reste intact : il appartient a l'onboarding (WF6).\nINSERT INTO bot_sessions (telegram_id, chat_id, history, last_lang)\nVALUES ($1, $2, $3::jsonb, $4)\nON CONFLICT (telegram_id) DO UPDATE\n  SET chat_id    = EXCLUDED.chat_id,\n      history    = EXCLUDED.history,\n      last_lang  = EXCLUDED.last_lang,\n      updated_at = CURRENT_TIMESTAMP\nRETURNING telegram_id;",
+        "options": {
+          "queryReplacement": "={{ [ $json.telegram_id, $json.chat_id, JSON.stringify($json.history), $json.detected_language ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Postgres NutriSénégal"
+        }
+      },
+      "notes": "Enregistre avant l'envoi : un echec Telegram ne fait pas perdre le tour de conversation."
+    },
+    {
+      "id": "ff2b3113-cfe5-5426-b0b9-f56e2ba438c5",
+      "name": "Répondre",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_TOKEN_N8N }}/sendMessage",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Composer la réponse').first().json.chat_id, text: $('Composer la réponse').first().json.reply_text, parse_mode: 'Markdown' }) }}",
+        "options": {}
+      },
+      "notes": "WF3 repond lui-meme, comme WF6 : WF1 ne rappelle pas son noeud Repondre sur cette branche."
+    },
+    {
+      "id": "4fb42e1a-1473-5561-9dc8-294c25374d6a",
+      "name": "Note WF3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1160,
+        20
+      ],
+      "parameters": {
+        "width": 900,
+        "height": 210,
+        "content": "## WF3 nlu-router\nUn message texte entre, une intention et des ingrédients en sortent (ARCHITECTURE_V2.md §4.2 et §5).\n\nGemini ne répond **jamais** à l’utilisateur ici : il classe et il extrait, sortie JSON contrainte, température 0.2. Le calcul reste à l’API, la rédaction ira à WF4.",
+        "color": 4
+      }
+    },
+    {
+      "id": "b1685bb0-4cdb-57cb-a6a3-cf7143d1e6aa",
+      "name": "Note repli",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -260,
+        520
+      ],
+      "parameters": {
+        "width": 620,
+        "height": 260,
+        "content": "## Deux filets de sécurité\n**Repli** — Gemini indisponible, ou confiance < 0.6 sur une analyse : `/analyze-menu` reprend le texte brut avec spaCy + rapidfuzz, sans service externe (décision 4 du §11).\n\n**Confirmation** — repli, confiance basse, ou ingrédient non reconnu : la réponse se termine par une demande de reformulation. Une analyse incomplète présentée comme complète est le pire résultat possible (§7).",
+        "color": 3
+      }
+    },
+    {
+      "id": "43389427-2bea-5ece-8de1-ae96a6e9e09a",
+      "name": "Note alias",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        -520
+      ],
+      "parameters": {
+        "width": 640,
+        "height": 250,
+        "content": "## Ce qui manque encore\n`ingredients.aliases` (§6.1) n’existe pas : le prompt ne reçoit donc **aucune liste fermée d’alias wolof**, et le rapprochement côté API se fait au jugé sur les noms du référentiel WAFCT — qui ne nomme que des espèces (« Carpe, filet, cru »), pas « poisson ».\n\n`unmatched_ingredients` est là pour ça : c’est la matière première de la table d’alias. Relever régulièrement ce que l’API n’a pas reconnu, puis poser les alias.",
+        "color": 5
+      }
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Contexte NLU",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contexte NLU": {
+      "main": [
+        [
+          {
+            "node": "Gemini nlu-router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini nlu-router": {
+      "main": [
+        [
+          {
+            "node": "Lire la sortie NLU",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire la sortie NLU": {
+      "main": [
+        [
+          {
+            "node": "NLU exploitable ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NLU exploitable ?": {
+      "main": [
+        [
+          {
+            "node": "Plat nommé ?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Repli /analyze-menu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plat nommé ?": {
+      "main": [
+        [
+          {
+            "node": "Chercher le plat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sans plat nommé",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chercher le plat": {
+      "main": [
+        [
+          {
+            "node": "Retenir le plat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retenir le plat": {
+      "main": [
+        [
+          {
+            "node": "Intention",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sans plat nommé": {
+      "main": [
+        [
+          {
+            "node": "Intention",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Intention": {
+      "main": [
+        [
+          {
+            "node": "Plat en base ?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Recommandations",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alternatives",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Détails du plat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Profil : WF7 à brancher",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plat en base ?": {
+      "main": [
+        [
+          {
+            "node": "Analyser le plat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Analyser les ingrédients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyser le plat": {
+      "main": [
+        [
+          {
+            "node": "Composer la réponse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyser les ingrédients": {
+      "main": [
+        [
+          {
+            "node": "Composer la réponse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recommandations": {
+      "main": [
+        [
+          {
+            "node": "Composer la réponse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alternatives": {
+      "main": [
+        [
+          {
+            "node": "Composer la réponse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Détails du plat": {
+      "main": [
+        [
+          {
+            "node": "Composer la réponse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Profil : WF7 à brancher": {
+      "main": [
+        [
+          {
+            "node": "Composer la réponse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aide": {
+      "main": [
+        [
+          {
+            "node": "Composer la réponse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Repli /analyze-menu": {
+      "main": [
+        [
+          {
+            "node": "Composer la réponse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Composer la réponse": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer la session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer la session": {
+      "main": [
+        [
+          {
+            "node": "Répondre",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Dakar",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "tags": [],
+  "meta": {
+    "description": "Routage d'intention et extraction d'ingredients - architecture v2, phase 1"
+  }
+}

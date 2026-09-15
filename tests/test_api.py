@@ -120,6 +120,38 @@ class TestDishes:
         assert response.status_code == 404
 
 
+class TestReplHorsLigne:
+    """`/analyze-menu` est le repli de WF3 quand Gemini est indisponible.
+
+    Les tests existants n'exerçaient que `WestAfricanMenuParser` directement :
+    la route, elle, passait un générateur au parser au lieu de la session, et
+    renvoyait un 500 à chaque appel. Le filet de sécurité était donc troué
+    exactement là où on comptait dessus.
+    """
+
+    def test_analyse_un_texte_libre(self, client, seeded_db):
+        response = client.post('/api/analyze-menu',
+                               json={'menu_text': 'du riz blanc avec de la pâte d\'arachide'})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert 0 <= data['score'] <= 100
+        assert data['alert_level'] in ('safe', 'caution', 'danger', 'critical')
+
+    def test_applique_le_profil_de_l_utilisateur(self, client, seeded_db):
+        response = client.post('/api/analyze-menu',
+                               json={'menu_text': 'riz blanc', 'user_id': 'u1'})
+
+        assert response.status_code == 200
+
+    def test_texte_sans_ingredient_connu(self, client, seeded_db):
+        """Un texte hors sujet ne doit pas faire tomber la route : WF3 s'y
+        replie justement quand il n'a rien compris."""
+        response = client.post('/api/analyze-menu', json={'menu_text': 'azerty qwerty'})
+
+        assert response.status_code in (200, 422)
+
+
 class TestRechercheDeplat:
     """`?search=` : c'est ce qui permet a WF3 de passer d'un nom de plat a un
     dish_id, donc d'atteindre /analyze-dish, /alternatives et /dish_details.

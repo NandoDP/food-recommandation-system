@@ -210,7 +210,10 @@ def analyze_menu(payload: MenuAnalysisRequest, db: Session = Depends(db_instance
     
     health_profile = resoudre_profil_sante(payload, db)
 
-    parser = WestAfricanMenuParser(db_instance.get_db())
+    # `db_instance.get_db()` est une dépendance FastAPI : l'appeler rend un
+    # générateur, pas une Session. Le parser tombait donc en AttributeError à
+    # chaque appel — ce repli hors ligne n'a jamais fonctionné en production.
+    parser = WestAfricanMenuParser(db)
     items = parser.parse_menu_text(payload.menu_text.lower())
 
     return AnalysisResponse(**analyser_items("Menu détecté", items, health_profile, db))
